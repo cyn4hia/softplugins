@@ -55,56 +55,18 @@ The "cleanest graphs" curves, defined as cubic-beziers and applied **per segment
 
 **Type any curve:** the `bez` row takes any cubic-bezier — copy values straight from a tutorial, cheat sheet, or [cubic-bezier.com](https://cubic-bezier.com) — with a live preview tile (click it or **Apply Bezier**). Y values past 0/1 create overshoot curves.
 
-## Morph tab
-
-Morphs one object into another, using AE's native path-keyframe interpolation, with your chosen graph ease applied to the morph.
-
-**How to use:**
-1. Select the starting layer → click **Set Start**. Select the ending layer → click **Set End**. (Shortcut: just select both layers — first selected = start — and skip the buttons.)
-2. Set the duration and pick an ease from the dropdown.
-3. Park the time indicator where the morph should begin and click **Morph ▶**.
-
-**Two modes, chosen automatically:**
-
-- **Path morph** — when both layers have a bezier path (shape layers or masks): the start layer's path, fill color, transform, and opacity are keyframed to match the end layer, and the end layer is hidden. One object genuinely becomes the other.
-- **Blend morph** — anything else (text, footage, precomps): both layers travel together between the two transforms while crossfading.
-
-The morph keyframes **stay selected** after creation, so you can immediately restyle the timing with any graph tile in the Ease tab.
-
-**Path morph tips:**
-- Parametric shapes (Rectangle/Ellipse from the shape tools) need a bezier path first: right-click the shape's path in the timeline → **Convert To Bezier Path**.
-- Similar vertex counts between the two paths give the cleanest in-between frames.
-- Unparent the layers before morphing; multi-mask layers morph the first mask; strokes and gradient fills aren't matched (solid fills are).
-
 ## Custom tab
 
 - A **live graph preview** that redraws as you drag the In/Out sliders — click the preview (or **Apply**) to use it.
 - **Copy Ease / Paste Ease** — grab the curve off one keyframe and stamp it onto any others, across properties and layers.
 
-## FX tab
-
-| Button | What it does |
-|---|---|
-| **Cycle / Ping-Pong / Offset / Continue** | Loop expressions after the last keyframe (need 2+ keys) |
-| **Overshoot** | Shoots past the final keyframe and springs back |
-| **Bounce** | Bounces to rest after the final keyframe (best when motion arrives with speed) |
-| **Wiggle** | Random movement — set **Freq** and **Amt**, then click |
-| **Clear FX** | Removes expressions from the selection (finds every expression on selected layers) |
-
 ## Rendering in Media Encoder
 
-- **Ease presets can't render wrong.** They write ordinary keyframe interpolation into the project — the same data you'd get dragging handles in the graph editor. Media Encoder, aerender, and the AE preview all read that identically; nothing from the plugin is needed at render time.
-- **FX are expressions, and those ARE evaluated at render time.** As of v3.1 every one of them is self-guarding: if anything about it fails during a headless render, it falls back to the plain keyframe motion instead of erroring — a render error would otherwise make Media Encoder silently disable the expression for the whole render.
-- If a render still doesn't match your preview at animated spots, it's almost always one of these:
-  1. **Stale queue** — Media Encoder renders the project state from when you queued it. Save the project and re-queue after any change.
-  2. **Frame-rate override** — check the AME output preset isn't set to a different frame rate than the comp ("Match Source" is safest); resampling shifts where expressions like wiggle are evaluated.
-  3. **Lying preview** — if the AE preview itself is stale, purge it: Edit → Purge → All Memory & Disk Cache.
-  4. **Expression warnings** — open the render's log in AME (chevron next to the finished item) and look for expression warnings; that pinpoints the property.
+**Ease presets can't render wrong.** They write ordinary keyframe interpolation into the project — the same data you'd get dragging handles in the graph editor. Media Encoder, aerender, and the AE preview all read that identically; nothing from the plugin is needed at render time. If a render doesn't match your preview, save and re-queue (Media Encoder renders the project state from when it was queued), or purge a stale AE preview: Edit → Purge → All Memory & Disk Cache.
 
 ## Tips
 
 - Works across multiple properties and multiple layers at once.
-- Tweak an FX after applying: open the property's expression and edit `amp`, `freq`, `decay` (overshoot) or `e`, `g` (bounce).
 - Cmd/Ctrl+Z undoes any click in one step.
 
 ## Uninstall
