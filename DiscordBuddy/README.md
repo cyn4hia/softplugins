@@ -4,9 +4,9 @@ A small dockable panel that puts what you're animating on your Discord profile, 
 
 > **Playing Adobe After Effects**
 > Editing my-project.aep
-> Comp: Main · 12:34 elapsed
+> 12:34 elapsed
 
-It refreshes every ~15 s as you switch projects and comps, shows session elapsed time, and clears itself when you stop it or quit AE.
+It refreshes every ~15 s as you switch projects, shows session elapsed time, and clears itself when you stop it or quit AE.
 
 ## Install
 
@@ -30,7 +30,7 @@ Discord shows the *name of a Discord application* as the "Playing …" line, so 
 
 1. Paste your Application ID into the **App ID** field (remembered between sessions).
 2. With the Discord **desktop** app running, press **Start**. Your status appears within a few seconds; the panel's status line shows exactly what's being broadcast.
-3. **Hide project name** broadcasts *"Working on a secret project"* instead of your file and comp names — for client work.
+3. **Hide project name** broadcasts *"Working on a secret project"* instead of your file name — for client work.
 4. **Stop** clears your status. Quitting AE clears it automatically too: the connector notices the heartbeat stopped and shuts itself down.
 
 ## How the connection works
