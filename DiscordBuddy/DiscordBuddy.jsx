@@ -1,8 +1,8 @@
 /**********************************************************************
  DiscordBuddy.jsx  \u2014  Discord Rich Presence for After Effects
- v1.1   Shows "Playing Adobe After Effects" with your current .aep
+ v1.2   Shows "Playing Adobe After Effects" with your current .aep
         on your Discord profile, like the VS Code and game
-        integrations.
+        integrations. (v1.2: purple UI theme, matching GraphBuddy.)
 
  Install (After Effects 2026):
    macOS:   /Applications/Adobe After Effects 2026/Scripts/ScriptUI Panels/
@@ -422,6 +422,94 @@
     };
 
     // ------------------------------------------------------------------
+    // Purple theme (matches GraphBuddy). Buttons are custom-drawn
+    // because ScriptUI can't recolor native ones; background and text
+    // tints are best-effort per platform and never break the panel.
+    // ------------------------------------------------------------------
+
+    var COL = {
+        panelBg:     [0.11, 0.09, 0.16, 1],
+        border:      [0.36, 0.30, 0.53, 1],
+        borderHover: [0.64, 0.54, 0.92, 1],
+        btnBg:       [0.24, 0.19, 0.37, 1],
+        btnBgHover:  [0.31, 0.25, 0.47, 1],
+        btnBgDown:   [0.38, 0.31, 0.57, 1],
+        btnText:     [0.91, 0.88, 1.00, 1],
+        text:        [0.86, 0.83, 0.95, 1],
+        muted:       [0.63, 0.58, 0.77, 1]
+    };
+
+    function paintBG(ctrl, color) {
+        try {
+            var g = ctrl.graphics;
+            g.backgroundColor = g.newBrush(g.BrushType.SOLID_COLOR, [color[0], color[1], color[2]]);
+        } catch (e) {}
+    }
+
+    function tintText(ctrl, color) {
+        try {
+            var g = ctrl.graphics;
+            g.foregroundColor = g.newPen(g.PenType.SOLID_COLOR, [color[0], color[1], color[2]], 1);
+        } catch (e) {}
+    }
+
+    // AE doesn't repaint custom-drawn controls on mouse enter/leave, so
+    // force a redraw to make the hover highlight visible
+    function hoverRepaint(ctrl) {
+        function repaint(ev) {
+            try { ev.target.notify("onDraw"); } catch (e) {}
+        }
+        ctrl.addEventListener("mouseover", repaint);
+        ctrl.addEventListener("mouseout", repaint);
+    }
+
+    var BTN_FONT = null;
+
+    function btnFont() {
+        if (BTN_FONT === null) {
+            try { BTN_FONT = ScriptUI.newFont("dialog", ScriptUI.FontStyle.REGULAR, 11); } catch (e) {}
+        }
+        return BTN_FONT;
+    }
+
+    // Flat purple button: an iconbutton drawn by hand, with hover and
+    // pressed states.
+    function renderButton(ctrl, label) {
+        ctrl.onDraw = function (drawState) {
+            try {
+                if (!this.size) return;
+                var g = this.graphics;
+                var w = this.size.width;
+                var h = this.size.height;
+                var over = false, down = false;
+                if (drawState) {
+                    over = drawState.mouseOver === true;
+                    down = drawState.leftButtonPressed === true;
+                }
+                g.newPath();
+                g.rectPath(0, 0, w, h);
+                g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, down ? COL.btnBgDown : (over ? COL.btnBgHover : COL.btnBg)));
+                g.newPath();
+                g.rectPath(0, 0, w - 1, h - 1);
+                g.strokePath(g.newPen(g.PenType.SOLID_COLOR, over ? COL.borderHover : COL.border, 1));
+                var f = btnFont();
+                var tw = label.length * 5.5;
+                var th = 12;
+                try {
+                    var m = g.measureString(label, f);
+                    tw = m.width;
+                    th = m.height;
+                } catch (eM) {}
+                var tx = (w - tw) / 2;
+                if (tx < 2) tx = 2;
+                var ty = (h - th) / 2;
+                if (ty < 0) ty = 0;
+                g.drawString(label, g.newPen(g.PenType.SOLID_COLOR, COL.btnText, 1), tx, ty, f);
+            } catch (eDraw) {}
+        };
+    }
+
+    // ------------------------------------------------------------------
     // UI
     // ------------------------------------------------------------------
 
@@ -432,21 +520,25 @@
         pal.alignChildren = ["fill", "top"];
         pal.spacing = 6;
         pal.margins = 10;
+        paintBG(pal, COL.panelBg);
 
         var intro = pal.add("statictext", undefined,
             'Show "Playing Adobe After Effects"\n+ your .aep on your Discord profile.', { multiline: true });
         intro.alignment = ["fill", "top"];
         try { intro.graphics.font = ScriptUI.newFont(intro.graphics.font.name, ScriptUI.FontStyle.ITALIC, 9); } catch (eF1) {}
+        tintText(intro, COL.muted);
 
         var r1 = pal.add("group");
         r1.orientation = "row";
         r1.alignChildren = ["left", "center"];
         r1.alignment = ["fill", "top"];
         r1.spacing = 4;
-        r1.add("statictext", undefined, "App ID");
+        var stId = r1.add("statictext", undefined, "App ID");
+        tintText(stId, COL.text);
         var idField = r1.add("edittext", undefined, loadSetting("clientId", ""));
         idField.alignment = ["fill", "center"];
         idField.characters = 14;
+        tintText(idField, COL.text);
         idField.helpTip = "Your Discord Application ID. Create a free app named \"Adobe After Effects\" at discord.com/developers/applications and paste its Application ID here \u2014 the app name is what Discord shows after \"Playing\". Remembered between sessions.";
         idField.onChange = function () {
             saveSetting("clientId", idField.text.replace(/^\s+|\s+$/g, ""));
@@ -454,6 +546,7 @@
 
         var privChk = pal.add("checkbox", undefined, "Hide project name");
         privChk.helpTip = "Broadcasts \"Working on a secret project\" instead of the .aep name.";
+        tintText(privChk, COL.text);
         privChk.value = loadSetting("privacy", "0") === "1";
         PRESENCE.privacy = privChk.value;
         privChk.onClick = function () {
@@ -469,10 +562,12 @@
         r2.spacing = 4;
 
         function btn(parent, label, tip, fn) {
-            var b = parent.add("button", undefined, label);
+            var b = parent.add("iconbutton", undefined, undefined, { style: "toolbutton" });
             b.helpTip = tip;
             b.alignment = ["fill", "center"];
-            b.preferredSize.height = 22;
+            b.preferredSize = [60, 24];
+            renderButton(b, label);
+            hoverRepaint(b);
             b.onClick = fn;
             return b;
         }
@@ -490,6 +585,7 @@
         var statusText = pal.add("statictext", undefined, "Presence off.");
         statusText.alignment = ["fill", "top"];
         try { statusText.graphics.font = ScriptUI.newFont(statusText.graphics.font.name, ScriptUI.FontStyle.ITALIC, 9); } catch (eF2) {}
+        tintText(statusText, COL.muted);
         statusFn = function (msg) {
             statusText.text = msg;
             statusText.helpTip = msg;

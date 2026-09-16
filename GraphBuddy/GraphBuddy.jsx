@@ -1,8 +1,10 @@
 /**********************************************************************
  GraphBuddy.jsx  \u2014  one-click graph editor eases for After Effects
- v4.2  (graph-only: Ease, Flow, and Custom tabs. Morph and FX tabs
-        removed. Flow tab: cubic-bezier graph pack applied per segment
-        with computed keyframe speeds, plus a type-any-bezier input.)
+ v4.3  (purple UI theme: dark violet panel, lavender graph tiles, and
+        custom-drawn buttons. Behavior unchanged from v4.2 \u2014 graph-only:
+        Ease, Flow, and Custom tabs. Flow tab: cubic-bezier graph pack
+        applied per segment with computed keyframe speeds, plus a
+        type-any-bezier input.)
 
  Install (After Effects 2026):
    macOS:   /Applications/Adobe After Effects 2026/Scripts/ScriptUI Panels/
@@ -386,16 +388,26 @@
     // Graph tile drawing (each preset button draws its value graph)
     // ------------------------------------------------------------------
 
+    // Purple theme. Tiles and buttons are custom-drawn (ScriptUI can't
+    // recolor native buttons), the panel background is painted, and
+    // text is tinted lavender where the platform allows it.
     var COL = {
-        tileBg:      [0.13, 0.14, 0.19, 1],
-        tileBgHover: [0.19, 0.21, 0.29, 1],
-        tileBgDown:  [0.23, 0.26, 0.36, 1],
-        border:      [0.32, 0.34, 0.44, 1],
-        borderHover: [0.55, 0.60, 0.80, 1],
-        grid:        [0.20, 0.22, 0.29, 1],
-        curve:       [0.95, 0.42, 0.34, 1],
-        dot:         [0.98, 0.80, 0.25, 1],
-        label:       [0.82, 0.84, 0.88, 1]
+        panelBg:     [0.11, 0.09, 0.16, 1],
+        tileBg:      [0.16, 0.13, 0.24, 1],
+        tileBgHover: [0.22, 0.18, 0.33, 1],
+        tileBgDown:  [0.28, 0.23, 0.42, 1],
+        border:      [0.36, 0.30, 0.53, 1],
+        borderHover: [0.64, 0.54, 0.92, 1],
+        grid:        [0.21, 0.17, 0.31, 1],
+        curve:       [0.73, 0.58, 1.00, 1],
+        dot:         [0.99, 0.79, 0.42, 1],
+        label:       [0.86, 0.83, 0.95, 1],
+        btnBg:       [0.24, 0.19, 0.37, 1],
+        btnBgHover:  [0.31, 0.25, 0.47, 1],
+        btnBgDown:   [0.38, 0.31, 0.57, 1],
+        btnText:     [0.91, 0.88, 1.00, 1],
+        text:        [0.86, 0.83, 0.95, 1],
+        muted:       [0.63, 0.58, 0.77, 1]
     };
 
     var TILE_FONT = null;
@@ -435,6 +447,69 @@
         }
         ctrl.addEventListener("mouseover", repaint);
         ctrl.addEventListener("mouseout", repaint);
+    }
+
+    // Theme helpers. Both are best-effort: some platforms ignore
+    // background/foreground overrides on native controls, so failures
+    // must never break the panel.
+    function paintBG(ctrl, color) {
+        try {
+            var g = ctrl.graphics;
+            g.backgroundColor = g.newBrush(g.BrushType.SOLID_COLOR, [color[0], color[1], color[2]]);
+        } catch (e) {}
+    }
+
+    function tintText(ctrl, color) {
+        try {
+            var g = ctrl.graphics;
+            g.foregroundColor = g.newPen(g.PenType.SOLID_COLOR, [color[0], color[1], color[2]], 1);
+        } catch (e) {}
+    }
+
+    var BTN_FONT = null;
+
+    function btnFont() {
+        if (BTN_FONT === null) {
+            try { BTN_FONT = ScriptUI.newFont("dialog", ScriptUI.FontStyle.REGULAR, 11); } catch (e) {}
+        }
+        return BTN_FONT;
+    }
+
+    // Flat purple button: same idea as the graph tiles — an iconbutton
+    // drawn by hand, with hover and pressed states.
+    function renderButton(ctrl, label) {
+        ctrl.onDraw = function (drawState) {
+            try {
+                if (!this.size) return;
+                var g = this.graphics;
+                var w = this.size.width;
+                var h = this.size.height;
+                var over = false, down = false;
+                if (drawState) {
+                    over = drawState.mouseOver === true;
+                    down = drawState.leftButtonPressed === true;
+                }
+                g.newPath();
+                g.rectPath(0, 0, w, h);
+                g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, down ? COL.btnBgDown : (over ? COL.btnBgHover : COL.btnBg)));
+                g.newPath();
+                g.rectPath(0, 0, w - 1, h - 1);
+                g.strokePath(g.newPen(g.PenType.SOLID_COLOR, over ? COL.borderHover : COL.border, 1));
+                var f = btnFont();
+                var tw = label.length * 5.5;
+                var th = 12;
+                try {
+                    var m = g.measureString(label, f);
+                    tw = m.width;
+                    th = m.height;
+                } catch (eM) {}
+                var tx = (w - tw) / 2;
+                if (tx < 2) tx = 2;
+                var ty = (h - th) / 2;
+                if (ty < 0) ty = 0;
+                g.drawString(label, g.newPen(g.PenType.SOLID_COLOR, COL.btnText, 1), tx, ty, f);
+            } catch (eDraw) {}
+        };
     }
 
     // Attach a value-graph rendering to a control. getSpec() returns
@@ -611,11 +686,13 @@
         pal.alignChildren = ["fill", "top"];
         pal.spacing = 6;
         pal.margins = 8;
+        paintBG(pal, COL.panelBg);
 
         var tp = pal.add("tabbedpanel");
         tp.alignChildren = ["fill", "top"];
         tp.alignment = ["fill", "top"];
         tp.margins = 6;
+        paintBG(tp, COL.panelBg);
 
         function makeTab(title) {
             var t = tp.add("tab", undefined, title);
@@ -623,6 +700,7 @@
             t.alignChildren = ["fill", "top"];
             t.spacing = 5;
             t.margins = 8;
+            paintBG(t, COL.panelBg);
             return t;
         }
 
@@ -636,10 +714,12 @@
         }
 
         function btn(parent, label, tip, fn) {
-            var b = parent.add("button", undefined, label);
+            var b = parent.add("iconbutton", undefined, undefined, { style: "toolbutton" });
             b.helpTip = tip;
             b.alignment = ["fill", "center"];
-            b.preferredSize.height = 22;
+            b.preferredSize = [60, 24];
+            renderButton(b, label);
+            hoverRepaint(b);
             b.onClick = fn;
             return b;
         }
@@ -649,10 +729,12 @@
             g.alignChildren = ["left", "center"];
             var st = g.add("statictext", undefined, labelTxt);
             st.preferredSize.width = 24;
+            tintText(st, COL.text);
             var sl = g.add("slider", undefined, def, 1, 100);
             sl.alignment = ["fill", "center"];
             var et = g.add("edittext", undefined, String(def));
             et.characters = 4;
+            tintText(et, COL.text);
             sl.onChanging = function () {
                 et.text = String(Math.round(sl.value));
                 if (changed) changed();
@@ -717,12 +799,14 @@
 
         var rbz = row(tFlow);
         rbz.alignChildren = ["left", "center"];
-        rbz.add("statictext", undefined, "bez");
+        var stBez = rbz.add("statictext", undefined, "bez");
+        tintText(stBez, COL.text);
         var bzX1 = rbz.add("edittext", undefined, "0.71");
         var bzY1 = rbz.add("edittext", undefined, "0");
         var bzX2 = rbz.add("edittext", undefined, "0.29");
         var bzY2 = rbz.add("edittext", undefined, "1");
         bzX1.characters = 4; bzY1.characters = 4; bzX2.characters = 4; bzY2.characters = 4;
+        tintText(bzX1, COL.text); tintText(bzY1, COL.text); tintText(bzX2, COL.text); tintText(bzY2, COL.text);
         bzX1.helpTip = "x1 (0..1)"; bzY1.helpTip = "y1 (-3..3, past 0/1 = overshoot)";
         bzX2.helpTip = "x2 (0..1)"; bzY2.helpTip = "y2 (-3..3, past 0/1 = overshoot)";
 
@@ -753,6 +837,7 @@
 
         var stFlowHint = tFlow.add("statictext", undefined, "Applies to pairs of consecutive keys.");
         try { stFlowHint.graphics.font = ScriptUI.newFont(stFlowHint.graphics.font.name, ScriptUI.FontStyle.ITALIC, 9); } catch (eF5) {}
+        tintText(stFlowHint, COL.muted);
 
         // ---- Tab 3: Custom (sliders + live preview) ------------------
 
@@ -796,6 +881,7 @@
         var statusText = pal.add("statictext", undefined, "Select keys, props, or layers \u2014 then click a graph.");
         statusText.alignment = ["fill", "top"];
         try { statusText.graphics.font = ScriptUI.newFont(statusText.graphics.font.name, ScriptUI.FontStyle.ITALIC, 9); } catch (eF3) {}
+        tintText(statusText, COL.muted);
         statusFn = function (msg) {
             statusText.text = msg;
             statusText.helpTip = msg;
