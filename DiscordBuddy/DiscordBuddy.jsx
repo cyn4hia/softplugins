@@ -1,8 +1,9 @@
 /**********************************************************************
  DiscordBuddy.jsx  \u2014  Discord Rich Presence for After Effects
- v1.2   Shows "Playing Adobe After Effects" with your current .aep
+ v1.3   Shows "Playing Adobe After Effects" with your current .aep
         on your Discord profile, like the VS Code and game
-        integrations. (v1.2: purple UI theme, matching GraphBuddy.)
+        integrations. (v1.3: the Discord application is built in \u2014
+        no App ID to create or paste, just press Start.)
 
  Install (After Effects 2026):
    macOS:   /Applications/Adobe After Effects 2026/Scripts/ScriptUI Panels/
@@ -27,6 +28,14 @@
 (function discordBuddy(thisObj) {
 
     var SCRIPT_NAME = "DiscordBuddy";
+
+    // The shared Discord application everyone broadcasts through — its
+    // name is the "Playing ..." line and its art assets are the icon.
+    // Application IDs are public by design: Rich Presence over the local
+    // socket uses no secret and no login, so shipping this costs nothing.
+    // To use your own application instead, replace this with your
+    // Application ID from discord.com/developers/applications.
+    var CLIENT_ID = "1549167859400441966";
 
     // ------------------------------------------------------------------
     // Status line (set once the UI exists; replaces modal alerts)
@@ -364,10 +373,10 @@
         try { pf.remove(); } catch (e3) {}
     }
 
-    function startPresence(clientIdRaw) {
-        var clientId = String(clientIdRaw).replace(/^\s+|\s+$/g, "");
+    function startPresence() {
+        var clientId = String(CLIENT_ID).replace(/^\s+|\s+$/g, "");
         if (!/^\d{15,25}$/.test(clientId)) {
-            setStatus("Paste your numeric Application ID first (see README for the 2-minute setup).");
+            setStatus("Built-in App ID is broken — fix the CLIENT_ID line at the top of DiscordBuddy.jsx.");
             return;
         }
         var dir = supportDir();
@@ -528,22 +537,6 @@
         try { intro.graphics.font = ScriptUI.newFont(intro.graphics.font.name, ScriptUI.FontStyle.ITALIC, 9); } catch (eF1) {}
         tintText(intro, COL.muted);
 
-        var r1 = pal.add("group");
-        r1.orientation = "row";
-        r1.alignChildren = ["left", "center"];
-        r1.alignment = ["fill", "top"];
-        r1.spacing = 4;
-        var stId = r1.add("statictext", undefined, "App ID");
-        tintText(stId, COL.text);
-        var idField = r1.add("edittext", undefined, loadSetting("clientId", ""));
-        idField.alignment = ["fill", "center"];
-        idField.characters = 14;
-        tintText(idField, COL.text);
-        idField.helpTip = "Your Discord Application ID. Create a free app named \"Adobe After Effects\" at discord.com/developers/applications and paste its Application ID here \u2014 the app name is what Discord shows after \"Playing\". Remembered between sessions.";
-        idField.onChange = function () {
-            saveSetting("clientId", idField.text.replace(/^\s+|\s+$/g, ""));
-        };
-
         var privChk = pal.add("checkbox", undefined, "Hide project name");
         privChk.helpTip = "Broadcasts \"Working on a secret project\" instead of the .aep name.";
         tintText(privChk, COL.text);
@@ -572,8 +565,8 @@
             return b;
         }
 
-        btn(r2, "Start", "Starts broadcasting to Discord. Needs the Discord desktop app running, Node.js installed, and your App ID above \u2014 see the README for the 2-minute setup.",
-            function () { startPresence(idField.text); });
+        btn(r2, "Start", "Starts broadcasting to Discord. Needs the Discord desktop app running and Node.js installed \u2014 see the README for the 1-minute setup.",
+            startPresence);
         btn(r2, "Stop", "Stops broadcasting and clears your Discord status.", stopPresence);
         btn(r2, "Log", "Opens the connector log \u2014 check it if nothing shows up in Discord.", function () {
             var dir = supportDir();

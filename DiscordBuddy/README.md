@@ -16,22 +16,18 @@ It refreshes every ~15 s as you switch projects, shows session elapsed time, and
 2. Restart After Effects.
 3. Open **Window → DiscordBuddy.jsx** (bottom of the Window menu) and dock it anywhere.
 
-## One-time setup (~2 minutes)
+## One-time setup (~1 minute)
 
-Discord shows the *name of a Discord application* as the "Playing …" line, so you create one — free, no bot, no code:
+The Discord application — the "Adobe After Effects" name and icon your status shows — is **built into the plugin**. There's nothing to create, register, or paste.
 
-1. Go to [discord.com/developers/applications](https://discord.com/developers/applications) → **New Application** → name it exactly `Adobe After Effects` (that name is what appears after "Playing").
-2. On **General Information**, copy the **Application ID**.
-3. *(Optional, adds the AE icon to your status)*: under **Rich Presence → Art Assets**, upload a 512×512 After Effects icon with the key name `aftereffects`.
-4. Install [Node.js](https://nodejs.org) if you don't have it — the connector runs as a tiny background Node script, because AE scripts can't talk to Discord's local socket directly.
-5. In After Effects: **Preferences → Scripting & Expressions → ✓ Allow Scripts to Write Files and Access Network**.
+1. Install [Node.js](https://nodejs.org) if you don't have it — the connector runs as a tiny background Node script, because AE scripts can't talk to Discord's local socket directly.
+2. In After Effects: **Preferences → Scripting & Expressions → ✓ Allow Scripts to Write Files and Access Network**.
 
 ## Use
 
-1. Paste your Application ID into the **App ID** field (remembered between sessions).
-2. With the Discord **desktop** app running, press **Start**. Your status appears within a few seconds; the panel's status line shows exactly what's being broadcast.
-3. **Hide project name** broadcasts *"Working on a secret project"* instead of your file name — for client work.
-4. **Stop** clears your status. Quitting AE clears it automatically too: the connector notices the heartbeat stopped and shuts itself down.
+1. With the Discord **desktop** app running, press **Start**. Your status appears within a few seconds; the panel's status line shows exactly what's being broadcast.
+2. **Hide project name** broadcasts *"Working on a secret project"* instead of your file name — for client work.
+3. **Stop** clears your status. Quitting AE clears it automatically too: the connector notices the heartbeat stopped and shuts itself down.
 
 ## How the connection works
 
@@ -47,8 +43,12 @@ Nothing leaves your machine except to your local Discord app.
 
 - Press **Log** — the connector writes everything it does (connection attempts, Discord errors) to `helper.log`.
 - No status showing? The **desktop** Discord app must be running (browser Discord has no local socket), and Discord **Settings → Activity Privacy → Share your detected activities with others** must be on.
-- `Invalid Client ID` in the log: re-copy the Application ID from the developer portal.
+- `Invalid Client ID` in the log: only possible if you edited the `CLIENT_ID` line — re-copy your Application ID from the developer portal.
 - "Node.js not found": install it from [nodejs.org](https://nodejs.org), then press Start again.
+
+## Advanced — use your own Discord application
+
+Want your own name or icon on the status? Create a free application at [discord.com/developers/applications](https://discord.com/developers/applications) (its name is what appears after "Playing"), optionally upload a 512×512 icon under **Rich Presence → Art Assets** with the key name `aftereffects`, then replace the `CLIENT_ID` line near the top of `DiscordBuddy.jsx` with your Application ID. Application IDs are public identifiers — Rich Presence uses no secret and no login — so sharing a script with an ID in it is safe by design.
 
 ## Uninstall
 
