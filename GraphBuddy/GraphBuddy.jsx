@@ -1,7 +1,7 @@
 /**********************************************************************
  GraphBuddy.jsx  \u2014  one-click graph editor eases for After Effects
- v4.3  (purple UI theme: dark violet panel, lavender graph tiles, and
-        custom-drawn buttons. Behavior unchanged from v4.2 \u2014 graph-only:
+ v4.4  (purple UI theme with a header icon; pairs with the BuddyHub
+        launcher panel. Behavior unchanged from v4.2 \u2014 graph-only:
         Ease, Flow, and Custom tabs. Flow tab: cubic-bezier graph pack
         applied per segment with computed keyframe speeds, plus a
         type-any-bezier input.)
@@ -687,6 +687,40 @@
         pal.spacing = 6;
         pal.margins = 8;
         paintBG(pal, COL.panelBg);
+
+        // header: buddy icon + title
+        var hdr = pal.add("group");
+        hdr.orientation = "row";
+        hdr.alignChildren = ["left", "center"];
+        hdr.spacing = 6;
+        var hIcon = hdr.add("iconbutton", undefined, undefined, { style: "toolbutton" });
+        hIcon.preferredSize = [20, 20];
+        hIcon.onDraw = function () {
+            try {
+                if (!this.size) return;
+                var g = this.graphics;
+                var w = this.size.width, h = this.size.height;
+                g.newPath(); g.rectPath(0, 0, w, h);
+                g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, COL.tileBg));
+                g.newPath(); g.rectPath(0, 0, w - 1, h - 1);
+                g.strokePath(g.newPen(g.PenType.SOLID_COLOR, COL.border, 1));
+                var cp = [0.9, 0, 0.1, 1];
+                g.newPath();
+                for (var i = 0; i <= 12; i++) {
+                    var pt = bezXY(i / 12, cp);
+                    var px = 3 + pt[0] * (w - 6);
+                    var py = h - 3 - pt[1] * (h - 6);
+                    if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+                }
+                g.strokePath(g.newPen(g.PenType.SOLID_COLOR, COL.curve, 2));
+                var dotB = g.newBrush(g.BrushType.SOLID_COLOR, COL.dot);
+                g.newPath(); g.ellipsePath(1.5, h - 5.5, 4, 4); g.fillPath(dotB);
+                g.newPath(); g.ellipsePath(w - 5.5, 1.5, 4, 4); g.fillPath(dotB);
+            } catch (e) {}
+        };
+        var hTitle = hdr.add("statictext", undefined, SCRIPT_NAME);
+        try { hTitle.graphics.font = ScriptUI.newFont(hTitle.graphics.font.name, ScriptUI.FontStyle.BOLD, 12); } catch (eFH) {}
+        tintText(hTitle, COL.text);
 
         var tp = pal.add("tabbedpanel");
         tp.alignChildren = ["fill", "top"];

@@ -1,9 +1,10 @@
 /**********************************************************************
  DiscordBuddy.jsx  \u2014  Discord Rich Presence for After Effects
- v1.3   Shows "Playing Adobe After Effects" with your current .aep
+ v1.4   Shows "Playing Adobe After Effects" with your current .aep
         on your Discord profile, like the VS Code and game
-        integrations. (v1.3: the Discord application is built in \u2014
-        no App ID to create or paste, just press Start.)
+        integrations. The Discord application is built in \u2014 no App ID
+        to create or paste, just press Start. (v1.4: header icon;
+        pairs with the BuddyHub launcher panel.)
 
  Install (After Effects 2026):
    macOS:   /Applications/Adobe After Effects 2026/Scripts/ScriptUI Panels/
@@ -530,6 +531,29 @@
         pal.spacing = 6;
         pal.margins = 10;
         paintBG(pal, COL.panelBg);
+
+        // header: buddy icon + title (the blob-with-eyes)
+        var hdr = pal.add("group");
+        hdr.orientation = "row";
+        hdr.alignChildren = ["left", "center"];
+        hdr.spacing = 6;
+        var hIcon = hdr.add("iconbutton", undefined, undefined, { style: "toolbutton" });
+        hIcon.preferredSize = [20, 20];
+        hIcon.onDraw = function () {
+            try {
+                if (!this.size) return;
+                var g = this.graphics;
+                var w = this.size.width, h = this.size.height;
+                g.newPath(); g.ellipsePath(1, h * 0.28, w - 2, h * 0.46);
+                g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, [0.55, 0.47, 0.92]));
+                var eyeB = g.newBrush(g.BrushType.SOLID_COLOR, COL.panelBg);
+                g.newPath(); g.ellipsePath(w * 0.30, h * 0.42, w * 0.13, h * 0.19); g.fillPath(eyeB);
+                g.newPath(); g.ellipsePath(w * 0.58, h * 0.42, w * 0.13, h * 0.19); g.fillPath(eyeB);
+            } catch (e) {}
+        };
+        var hTitle = hdr.add("statictext", undefined, SCRIPT_NAME);
+        try { hTitle.graphics.font = ScriptUI.newFont(hTitle.graphics.font.name, ScriptUI.FontStyle.BOLD, 12); } catch (eFH) {}
+        tintText(hTitle, COL.text);
 
         var intro = pal.add("statictext", undefined,
             'Show "Playing Adobe After Effects"\n+ your .aep on your Discord profile.', { multiline: true });
