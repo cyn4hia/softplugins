@@ -1,0 +1,190 @@
+/**********************************************************************
+ GraphBuddy — Flow tab: cubic-bezier graph pack applied per
+ segment, plus the type-any-bezier row.
+
+ Spliced into GraphBuddy.jsx's closure via //@include — not a
+ standalone script.
+**********************************************************************/
+
+// ------------------------------------------------------------------
+// Cubic-bezier segment engine (Flow-style graphs)
+//
+// Applies cubic-bezier(x1, y1, x2, y2) to every pair of consecutive
+// selected keys: the outgoing side of the first key and the incoming
+// side of the second. Speeds are computed from each segment's value
+// delta, so curves with velocity at the keys (y handles off the
+// baseline, e.g. Fast Out's vertical launch) reproduce exactly.
+// ------------------------------------------------------------------
+
+// Per-dimension speeds for one segment: slope * (value delta / time)
+function segSpeeds(prop, ki, kj, slope) {
+    var dt = prop.keyTime(kj) - prop.keyTime(ki);
+    if (dt <= 0) return null;
+    var n = easeDim(prop, ki);
+    var out = [];
+    var v0 = null, v1 = null;
+    try { v0 = prop.keyValue(ki); v1 = prop.keyValue(kj); } catch (e) { v0 = null; }
+    var d;
+    if (v0 === null || v1 === null) {
+        // shapes etc: no numeric delta, fall back to influence-only
+        for (d = 0; d < n; d++) out.push(0);
+        return out;
+    }
+    if (v0 instanceof Array) {
+        if (n === 1) {
+            // spatial: one ease for the whole path; speed = distance/time
+            var sum = 0;
+            for (d = 0; d < v0.length; d++) sum += (v1[d] - v0[d]) * (v1[d] - v0[d]);
+            out.push(slope * Math.sqrt(sum) / dt);
+        } else {
+            for (d = 0; d < n; d++) {
+                var dv = (d < v0.length) ? (v1[d] - v0[d]) : 0;
+                out.push(slope * dv / dt);
+            }
+        }
+    } else if (typeof v0 === "number") {
+        for (d = 0; d < n; d++) out.push(slope * (v1 - v0) / dt);
+    } else {
+        for (d = 0; d < n; d++) out.push(0);
+    }
+    return out;
+}
+
+function easeArrayFromSpeeds(speeds, influence) {
+    if (influence < 0.1) influence = 0.1;
+    if (influence > 100) influence = 100;
+    var arr = [];
+    for (var i = 0; i < speeds.length; i++) arr.push(new KeyframeEase(speeds[i], influence));
+    return arr;
+}
+
+function applyBezier(x1, y1, x2, y2, label) {
+    // clamp handle x so influences and slopes stay finite
+    var ox = Math.max(0.01, Math.min(1, x1));
+    var ix = Math.max(0.01, Math.min(1, 1 - x2));
+    var outSlope = y1 / ox;
+    var inSlope = (1 - y2) / ix;
+
+    var res = getTargets();
+    if (res.error) { setStatus(res.error); return; }
+
+    var applied = 0;
+    app.beginUndoGroup(SCRIPT_NAME + ": " + label);
+    try {
+        for (var t = 0; t < res.targets.length; t++) {
+            var prop = res.targets[t].prop;
+            var keys = res.targets[t].keys.slice(0);
+            keys.sort(function (a, b) { return a - b; });
+            for (var k = 0; k + 1 < keys.length; k++) {
+                var ki = keys[k];
+                var kj = keys[k + 1];
+                if (kj !== ki + 1) continue; // only real adjacent segments
+                try {
+                    var so = segSpeeds(prop, ki, kj, outSlope);
+                    var si = segSpeeds(prop, ki, kj, inSlope);
+                    if (so === null || si === null) continue;
+                    var B = KeyframeInterpolationType.BEZIER;
+                    // Capture the untouched sides BEFORE the ease call
+                    // (setTemporalEaseAtKey forces both sides bezier).
+                    var inT = prop.keyInInterpolationType(ki);
+                    var inE = prop.keyInTemporalEase(ki);
+                    prop.setTemporalEaseAtKey(ki, inE, easeArrayFromSpeeds(so, ox * 100));
+                    prop.setInterpolationTypeAtKey(ki, inT, B);
+                    var outT = prop.keyOutInterpolationType(kj);
+                    var outE = prop.keyOutTemporalEase(kj);
+                    prop.setTemporalEaseAtKey(kj, easeArrayFromSpeeds(si, ix * 100), outE);
+                    prop.setInterpolationTypeAtKey(kj, B, outT);
+                    applied++;
+                } catch (eSeg) {}
+            }
+        }
+    } finally {
+        app.endUndoGroup();
+    }
+    if (applied === 0) {
+        setStatus("Select at least 2 consecutive keyframes (a segment) first.");
+    } else {
+        setStatus(label + " \u2192 " + applied + (applied === 1 ? " segment" : " segments"));
+    }
+}
+
+// Flow-style cubic-bezier graph pack. S-Curve and Fast In are the
+// exact values shown in the reference video; the rest are the
+// canonical curves those packs are built from.
+var BEZ_PRESETS = [
+    { label: "Fast In", kind: "bez", cp: [1, 0, 1, 0],
+      tip: "Fast In - cubic-bezier(1, 0, 1, 0): crawls, then whips into the key at full speed" },
+    { label: "In", kind: "bez", cp: [0.5, 0, 1, 1],
+      tip: "In - cubic-bezier(0.5, 0, 1, 1): accelerates smoothly, arrives moving" },
+    { label: "S-Curve", kind: "bez", cp: [0.71, 0, 0.29, 1],
+      tip: "S-Curve - cubic-bezier(0.71, 0, 0.29, 1): the classic clean S" },
+    { label: "Fast Out", kind: "bez", cp: [0.16, 1, 0.3, 1],
+      tip: "Fast Out - cubic-bezier(0.16, 1, 0.3, 1): launches at full speed, long glide to rest" },
+    { label: "Out", kind: "bez", cp: [0, 0, 0.58, 1],
+      tip: "Out - cubic-bezier(0, 0, 0.58, 1): springs out, decelerates smoothly" },
+    { label: "Norm S", kind: "bez", cp: [0.645, 0.045, 0.355, 1],
+      tip: "Norm S - cubic-bezier(0.645, 0.045, 0.355, 1): gentler everyday S" },
+    { label: "Tight S", kind: "bez", cp: [0.9, 0, 0.1, 1],
+      tip: "Tight S - cubic-bezier(0.9, 0, 0.1, 1): long holds, fast middle" },
+    { label: "Tightest", kind: "bez", cp: [1, 0, 0, 1],
+      tip: "Tightest S - cubic-bezier(1, 0, 0, 1): maximum-tension S, all the motion in the middle" },
+    { label: "Front S", kind: "bez", cp: [0.2, 0, 0.1, 1],
+      tip: "Front S - cubic-bezier(0.2, 0, 0.1, 1): action up front, extra-long soft landing" }
+];
+
+// ------------------------------------------------------------------
+// Tab builder
+// ------------------------------------------------------------------
+
+function buildFlowTab(tp) {
+    var tab = makeTab(tp, "Flow");
+
+    tileGrid(tab, BEZ_PRESETS, function (preset) {
+        applyBezier(preset.cp[0], preset.cp[1], preset.cp[2], preset.cp[3], preset.label);
+    });
+
+    // type-any-bezier row + live preview
+    var rbz = row(tab);
+    rbz.alignChildren = ["left", "center"];
+    var stBez = rbz.add("statictext", undefined, "bez");
+    tintText(stBez, COL.text);
+    var bzX1 = rbz.add("edittext", undefined, "0.71");
+    var bzY1 = rbz.add("edittext", undefined, "0");
+    var bzX2 = rbz.add("edittext", undefined, "0.29");
+    var bzY2 = rbz.add("edittext", undefined, "1");
+    bzX1.characters = 4; bzY1.characters = 4; bzX2.characters = 4; bzY2.characters = 4;
+    tintText(bzX1, COL.text); tintText(bzY1, COL.text); tintText(bzX2, COL.text); tintText(bzY2, COL.text);
+    bzX1.helpTip = "x1 (0..1)"; bzY1.helpTip = "y1 (-3..3, past 0/1 = overshoot)";
+    bzX2.helpTip = "x2 (0..1)"; bzY2.helpTip = "y2 (-3..3, past 0/1 = overshoot)";
+
+    function bzCP() {
+        return [clampNum(bzX1.text, 0.71, 0, 1), clampNum(bzY1.text, 0, -3, 3),
+                clampNum(bzX2.text, 0.29, 0, 1), clampNum(bzY2.text, 1, -3, 3)];
+    }
+
+    var rbz2 = row(tab);
+    var bzPrev = rbz2.add("iconbutton", undefined, undefined, { style: "toolbutton" });
+    bzPrev.preferredSize = [58, 40];
+    bzPrev.helpTip = "Live preview of the cubic-bezier above - click to apply it";
+    renderGraph(bzPrev, function () {
+        return { kind: "bez", cp: bzCP(), label: "" };
+    });
+    hoverRepaint(bzPrev);
+    function bzRepaint() {
+        try { bzPrev.notify("onDraw"); } catch (e) {}
+    }
+    bzX1.onChange = bzRepaint; bzY1.onChange = bzRepaint;
+    bzX2.onChange = bzRepaint; bzY2.onChange = bzRepaint;
+    function bzApply() {
+        var cp = bzCP();
+        applyBezier(cp[0], cp[1], cp[2], cp[3], "Custom Bezier");
+    }
+    bzPrev.onClick = bzApply;
+    btn(rbz2, "Apply Bezier", "Applies the cubic-bezier above to the selected segments. Type any curve from any tutorial or cheat sheet.", bzApply);
+
+    var stHint = tab.add("statictext", undefined, "Applies to pairs of consecutive keys.");
+    try { stHint.graphics.font = ScriptUI.newFont(stHint.graphics.font.name, ScriptUI.FontStyle.ITALIC, 9); } catch (eF5) {}
+    tintText(stHint, COL.muted);
+
+    return tab;
+}

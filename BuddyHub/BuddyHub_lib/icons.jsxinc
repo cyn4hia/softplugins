@@ -1,0 +1,59 @@
+/**********************************************************************
+ BuddyHub icons  —  each buddy's icon, drawn in code (no image
+ files to install). Add a new kind here for a new buddy.
+
+ Spliced into BuddyHub.jsx's closure via //@include — not a
+ standalone script.
+**********************************************************************/
+
+// cubic bezier from (0,0) to (1,1) for the graph icon
+function bezXY(t, cp) {
+    var mt = 1 - t;
+    var a = 3 * mt * mt * t;
+    var b = 3 * mt * t * t;
+    var c = t * t * t;
+    return [a * cp[0] + b * cp[2] + c, a * cp[1] + b * cp[3] + c];
+}
+
+function drawIcon(g, kind, x, y, s, letter) {
+    var i;
+    if (kind === "graph") {
+        g.newPath(); g.rectPath(x, y, s, s);
+        g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, COL.tileBg));
+        g.newPath(); g.rectPath(x, y, s - 1, s - 1);
+        g.strokePath(g.newPen(g.PenType.SOLID_COLOR, COL.border, 1));
+        var cp = [0.9, 0, 0.1, 1];
+        g.newPath();
+        for (i = 0; i <= 12; i++) {
+            var pt = bezXY(i / 12, cp);
+            var px = x + 4 + pt[0] * (s - 8);
+            var py = y + s - 4 - pt[1] * (s - 8);
+            if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+        }
+        g.strokePath(g.newPen(g.PenType.SOLID_COLOR, COL.curve, 2));
+        var dotB = g.newBrush(g.BrushType.SOLID_COLOR, COL.dot);
+        g.newPath(); g.ellipsePath(x + 2, y + s - 7, 5, 5); g.fillPath(dotB);
+        g.newPath(); g.ellipsePath(x + s - 7, y + 2, 5, 5); g.fillPath(dotB);
+    } else if (kind === "discord") {
+        g.newPath(); g.rectPath(x, y, s, s);
+        g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, COL.tileBg));
+        g.newPath(); g.rectPath(x, y, s - 1, s - 1);
+        g.strokePath(g.newPen(g.PenType.SOLID_COLOR, COL.border, 1));
+        // the blob-with-eyes
+        g.newPath(); g.ellipsePath(x + 3, y + s * 0.28, s - 6, s * 0.46);
+        g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, COL.blob));
+        var eyeB = g.newBrush(g.BrushType.SOLID_COLOR, COL.panelBg);
+        g.newPath(); g.ellipsePath(x + s * 0.30, y + s * 0.42, s * 0.13, s * 0.19); g.fillPath(eyeB);
+        g.newPath(); g.ellipsePath(x + s * 0.58, y + s * 0.42, s * 0.13, s * 0.19); g.fillPath(eyeB);
+    } else {
+        g.newPath(); g.rectPath(x, y, s, s);
+        g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, COL.btnBg));
+        g.newPath(); g.rectPath(x, y, s - 1, s - 1);
+        g.strokePath(g.newPen(g.PenType.SOLID_COLOR, COL.border, 1));
+        var f = font("letter");
+        var tw = 8, th = 14;
+        try { var m = g.measureString(letter, f); tw = m.width; th = m.height; } catch (eM) {}
+        g.drawString(letter, g.newPen(g.PenType.SOLID_COLOR, COL.curve, 1),
+                     x + (s - tw) / 2, y + (s - th) / 2, f);
+    }
+}

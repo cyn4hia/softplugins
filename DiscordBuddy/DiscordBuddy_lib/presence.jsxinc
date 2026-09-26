@@ -1,0 +1,167 @@
+/**********************************************************************
+ DiscordBuddy presence  —  panel side of the connection: installs
+ and launches the Node helper, heartbeats state.json, and stops it.
+
+ Spliced into DiscordBuddy.jsx's closure via //@include — not a
+ standalone script.
+**********************************************************************/
+
+// ------------------------------------------------------------------
+// Presence engine (panel side)
+// ------------------------------------------------------------------
+
+var PRESENCE = {
+    running: false,
+    taskId: 0,
+    startStamp: 0,
+    privacy: false,
+    lastDetails: ""
+};
+
+function configJSON(clientId) {
+    return '{"clientId":"' + jsonEscape(clientId) + '",' +
+           '"largeImageKey":"aftereffects",' +
+           '"largeImageText":"Adobe After Effects"}';
+}
+
+// Heartbeat: what Discord should show right now. stopFlag = true
+// tells the helper to clear the presence and exit.
+function writeState(stopFlag) {
+    var dir = supportDir();
+    if (dir === null) return false;
+    var projName = null;
+    try { if (app.project.file !== null) projName = app.project.file.displayName; } catch (e) {}
+    var details;
+    if (PRESENCE.privacy) {
+        details = "Working on a secret project";
+    } else {
+        details = (projName !== null) ? "Editing " + projName : "Editing an unsaved project";
+    }
+    PRESENCE.lastDetails = details;
+    var now = Math.round((new Date()).getTime() / 1000);
+    var json = '{"details":"' + jsonEscape(details) + '"' +
+               ',"startTimestamp":' + PRESENCE.startStamp +
+               ',"updatedAt":' + now +
+               ',"stop":' + (stopFlag ? "true" : "false") + '}';
+    var ok = writeTextFile(new File(dir.fsName + "/state.json"), json);
+    if (ok && PRESENCE.running && !stopFlag) {
+        setStatus("\u25CF " + details);
+    }
+    return ok;
+}
+
+function findNode() {
+    var out = "";
+    var i;
+    if (isWin()) {
+        try { out = system.callSystem("cmd.exe /q /c where node"); } catch (e) {}
+        var lines = String(out || "").split(/[\r\n]+/);
+        for (i = 0; i < lines.length; i++) {
+            var p = lines[i].replace(/^\s+|\s+$/g, "");
+            if (p !== "" && File(p).exists) return p;
+        }
+        return null;
+    }
+    var candidates = ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"];
+    for (i = 0; i < candidates.length; i++) {
+        if (File(candidates[i]).exists) return candidates[i];
+    }
+    // login shell so nvm/fnm installs are found too
+    try { out = system.callSystem("/bin/zsh -lc 'command -v node'"); } catch (e2) {}
+    out = String(out || "").replace(/^\s+|\s+$/g, "");
+    if (out !== "" && File(out).exists) return out;
+    return null;
+}
+
+// Kill a previous helper (Start after an App ID change needs a fresh
+// handshake). Only kills the recorded pid if it still looks like node,
+// in case the pid was recycled by another process.
+function killHelper() {
+    var dir = supportDir();
+    if (dir === null) return;
+    var pf = new File(dir.fsName + "/helper.pid");
+    if (!pf.exists) return;
+    var pid = 0;
+    try {
+        if (pf.open("r")) { pid = parseInt(pf.read(), 10); pf.close(); }
+    } catch (e) { pid = 0; }
+    if (pid > 0 && !isNaN(pid)) {
+        try {
+            var chk = "";
+            if (isWin()) {
+                chk = String(system.callSystem('cmd.exe /q /c tasklist /fi "PID eq ' + pid + '" /nh') || "");
+                if (chk.toLowerCase().indexOf("node") !== -1) {
+                    system.callSystem("cmd.exe /q /c taskkill /pid " + pid + " /f");
+                }
+            } else {
+                chk = String(system.callSystem("/bin/ps -p " + pid + " -o comm=") || "");
+                if (chk.indexOf("node") !== -1) {
+                    system.callSystem("/bin/kill " + pid);
+                }
+            }
+        } catch (e2) {}
+    }
+    try { pf.remove(); } catch (e3) {}
+}
+
+function startPresence() {
+    var clientId = String(CLIENT_ID).replace(/^\s+|\s+$/g, "");
+    if (!/^\d{15,25}$/.test(clientId)) {
+        setStatus("Built-in App ID is broken — fix the CLIENT_ID line at the top of DiscordBuddy.jsx.");
+        return;
+    }
+    var helperSrc = readTextFile(new File(LIB_DIR + "/discord-presence.js"));
+    if (helperSrc === null) {
+        setStatus("Helper missing \u2014 copy the DiscordBuddy_lib folder next to DiscordBuddy.jsx.");
+        return;
+    }
+    var dir = supportDir();
+    var prefMsg = "Can't write files \u2014 enable Preferences > Scripting & Expressions > \"Allow Scripts to Write Files and Access Network\".";
+    if (dir === null) { setStatus(prefMsg); return; }
+    var helperFile = new File(dir.fsName + "/discord-presence.js");
+    if (!writeTextFile(helperFile, helperSrc) ||
+        !writeTextFile(new File(dir.fsName + "/config.json"), configJSON(clientId))) {
+        setStatus(prefMsg);
+        return;
+    }
+    killHelper();
+    PRESENCE.startStamp = Math.round((new Date()).getTime() / 1000);
+    if (!writeState(false)) { setStatus(prefMsg); return; }
+    var nodePath = findNode();
+    if (nodePath === null) {
+        setStatus("Node.js not found \u2014 install it from nodejs.org, then press Start again.");
+        return;
+    }
+    try {
+        if (isWin()) {
+            system.callSystem('cmd.exe /c start "" /b "' + nodePath + '" "' + helperFile.fsName + '"');
+        } else {
+            system.callSystem("/bin/bash -c 'nohup \"" + nodePath + "\" \"" + helperFile.fsName + "\" >/dev/null 2>&1 &'");
+        }
+    } catch (eLaunch) {
+        setStatus("Couldn't launch the helper \u2014 " + eLaunch.toString());
+        return;
+    }
+    if (PRESENCE.taskId === 0) {
+        PRESENCE.taskId = app.scheduleTask("__discordBuddyTick()", 15000, true);
+    }
+    PRESENCE.running = true;
+    setStatus("\u25CF " + PRESENCE.lastDetails);
+}
+
+function stopPresence() {
+    if (PRESENCE.taskId !== 0) {
+        try { app.cancelTask(PRESENCE.taskId); } catch (e) {}
+        PRESENCE.taskId = 0;
+    }
+    if (PRESENCE.running) writeState(true); // helper clears presence + exits
+    killHelper();
+    PRESENCE.running = false;
+    setStatus("Presence off.");
+}
+
+// scheduleTask evaluates a string in global scope, so the heartbeat
+// lives on $.global; the closure keeps access to the panel state.
+$.global.__discordBuddyTick = function () {
+    if (PRESENCE.running) writeState(false);
+};

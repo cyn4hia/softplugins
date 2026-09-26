@@ -12,7 +12,7 @@ Results show in the status line at the bottom (no popups), and every click is a 
 
 ## Install
 
-1. Copy `GraphBuddy.jsx` into the ScriptUI Panels folder:
+1. Copy `GraphBuddy.jsx` **and** the `GraphBuddy_lib` folder, side by side, into the ScriptUI Panels folder:
    - **macOS:** `/Applications/Adobe After Effects 2026/Scripts/ScriptUI Panels/`
    - **Windows:** `C:\Program Files\Adobe\Adobe After Effects 2026\Support Files\Scripts\ScriptUI Panels\`
 2. Restart After Effects.
@@ -71,4 +71,4 @@ The "cleanest graphs" curves, defined as cubic-beziers and applied **per segment
 
 ## Uninstall
 
-Delete `GraphBuddy.jsx` from the ScriptUI Panels folder and restart After Effects.
+Delete `GraphBuddy.jsx` and the `GraphBuddy_lib` folder from the ScriptUI Panels folder and restart After Effects.

@@ -1,0 +1,183 @@
+/**********************************************************************
+ GraphBuddy core  —  smart selection + the influence-ease engine
+ shared by every tab.
+
+ Spliced into GraphBuddy.jsx's closure via //@include — not a
+ standalone script.
+**********************************************************************/
+
+// ------------------------------------------------------------------
+// Selection helpers
+// ------------------------------------------------------------------
+
+function activeComp() {
+    var item = app.project.activeItem;
+    return (item !== null && item instanceof CompItem) ? item : null;
+}
+
+// Property value types that cannot take temporal ease.
+// SHAPE (mask/shape paths) is allowed: path keyframes support
+// temporal easing.
+function isEaseable(prop) {
+    var vt = prop.propertyValueType;
+    return vt !== PropertyValueType.TEXT_DOCUMENT &&
+           vt !== PropertyValueType.MARKER &&
+           vt !== PropertyValueType.NO_VALUE &&
+           vt !== PropertyValueType.CUSTOM_VALUE;
+}
+
+function isKeyable(prop) {
+    return prop.propertyType === PropertyType.PROPERTY &&
+           prop.canVaryOverTime &&
+           prop.numKeys >= 1 &&
+           isEaseable(prop);
+}
+
+function allKeyIndices(prop) {
+    var keys = [];
+    for (var i = 1; i <= prop.numKeys; i++) keys.push(i);
+    return keys;
+}
+
+// Recursively collect animated (keyframed) properties under a
+// layer or property group
+function collectAnimated(group, out) {
+    var n = 0;
+    try { n = group.numProperties; } catch (e) { n = 0; }
+    for (var i = 1; i <= n; i++) {
+        var p = null;
+        try { p = group.property(i); } catch (e2) { p = null; }
+        if (p === null) continue;
+        if (p.propertyType === PropertyType.PROPERTY) {
+            if (isKeyable(p)) out.push(p);
+        } else {
+            collectAnimated(p, out);
+        }
+    }
+}
+
+// Smart targets, in priority order:
+//   1) selected keyframes
+//   2) all keys on selected properties
+//   3) all keys on every animated property of selected layers
+function getTargets() {
+    var comp = activeComp();
+    if (comp === null) return { error: "Open a composition first.", targets: [] };
+
+    var targets = [];
+    var keyCount = 0;
+    var i, j, p, keys;
+
+    var props = comp.selectedProperties;
+
+    // 1) explicitly selected keyframes (indices snapshotted before edits)
+    for (i = 0; i < props.length; i++) {
+        p = props[i];
+        if (!isKeyable(p)) continue;
+        var sel = p.selectedKeys;
+        if (sel === null || sel.length === 0) continue;
+        keys = [];
+        for (j = 0; j < sel.length; j++) keys.push(sel[j]);
+        targets.push({ prop: p, keys: keys });
+        keyCount += keys.length;
+    }
+    if (targets.length > 0) return { targets: targets, keyCount: keyCount, mode: "selected keys" };
+
+    // 2) all keys on selected properties
+    for (i = 0; i < props.length; i++) {
+        p = props[i];
+        if (!isKeyable(p)) continue;
+        targets.push({ prop: p, keys: allKeyIndices(p) });
+        keyCount += p.numKeys;
+    }
+    if (targets.length > 0) return { targets: targets, keyCount: keyCount, mode: "selected properties" };
+
+    // If the user explicitly selected properties but none were usable
+    // (no keys, or a type that can't take ease like source text /
+    // markers), stop here \u2014 selecting a property also selects
+    // its layer, and cascading to layer mode would silently re-ease
+    // every other animated property.
+    for (i = 0; i < props.length; i++) {
+        if (props[i].propertyType === PropertyType.PROPERTY) {
+            return { error: "Selected properties can't take ease (or have no keyframes).", targets: [] };
+        }
+    }
+
+    // 3) every animated property of the selected layers
+    var layers = comp.selectedLayers;
+    for (i = 0; i < layers.length; i++) {
+        var found = [];
+        collectAnimated(layers[i], found);
+        for (j = 0; j < found.length; j++) {
+            targets.push({ prop: found[j], keys: allKeyIndices(found[j]) });
+            keyCount += found[j].numKeys;
+        }
+    }
+    if (targets.length > 0) return { targets: targets, keyCount: keyCount, mode: "selected layers" };
+
+    return { error: "Select keyframes, properties, or layers first.", targets: [] };
+}
+
+// Runs fn(prop, keyIndex) on every target key inside one undo group
+function applyToKeys(undoLabel, fn) {
+    var res = getTargets();
+    if (res.error) { setStatus(res.error); return; }
+
+    var applied = 0;
+    app.beginUndoGroup(SCRIPT_NAME + ": " + undoLabel);
+    try {
+        for (var t = 0; t < res.targets.length; t++) {
+            var tg = res.targets[t];
+            for (var k = 0; k < tg.keys.length; k++) {
+                try {
+                    fn(tg.prop, tg.keys[k]);
+                    applied++;
+                } catch (e) {
+                    // Some keys (e.g. roving) may refuse a change; skip them
+                }
+            }
+        }
+    } finally {
+        app.endUndoGroup();
+    }
+    var nProps = res.targets.length;
+    setStatus(undoLabel + " \u2192 " + applied + (applied === 1 ? " key on " : " keys on ") +
+              nProps + (nProps === 1 ? " property (" : " properties (") + res.mode + ")");
+}
+
+// ------------------------------------------------------------------
+// Ease engine
+// ------------------------------------------------------------------
+
+// Ease arrays must match the property's dimension count (1 for 1D and
+// spatial, 2/3 for multi-D). Reading the existing ease length avoids
+// guessing per value type.
+function easeDim(prop, keyIndex) {
+    var n = 1;
+    try { n = prop.keyInTemporalEase(keyIndex).length; } catch (e) {}
+    return n;
+}
+
+function easeArray(n, speed, influence) {
+    if (influence < 0.1) influence = 0.1;
+    if (influence > 100) influence = 100;
+    var arr = [];
+    for (var i = 0; i < n; i++) arr.push(new KeyframeEase(speed, influence));
+    return arr;
+}
+
+// inInf / outInf: influence 0.1..100, or null = leave that side linear
+function applyEase(inInf, outInf, label) {
+    applyToKeys(label, function (prop, ki) {
+        var B = KeyframeInterpolationType.BEZIER;
+        var L = KeyframeInterpolationType.LINEAR;
+        var n = easeDim(prop, ki);
+        // setTemporalEaseAtKey forces both sides of the key to BEZIER,
+        // so write the ease first, then restore any LINEAR side.
+        // Re-asserting an unchanged type does not reset the ease.
+        prop.setTemporalEaseAtKey(ki,
+            easeArray(n, 0, (inInf === null) ? 33.3333 : inInf),
+            easeArray(n, 0, (outInf === null) ? 33.3333 : outInf));
+        prop.setInterpolationTypeAtKey(ki, (inInf === null) ? L : B, (outInf === null) ? L : B);
+    });
+}

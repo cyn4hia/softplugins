@@ -1,0 +1,64 @@
+/**********************************************************************
+ BuddyHub registry  —  known buddies, discovery of *Buddy.jsx
+ files, and opening them.
+
+ Spliced into BuddyHub.jsx's closure via //@include — not a
+ standalone script.
+**********************************************************************/
+
+// ------------------------------------------------------------------
+// Buddy registry \u2014 known buddies get a description and a drawn
+// icon; anything else gets a letter badge so future buddies still
+// look at home.
+// ------------------------------------------------------------------
+
+var KNOWN = {
+    GraphBuddy:   { desc: "One-click graph editor eases", icon: "graph" },
+    DiscordBuddy: { desc: "Discord Rich Presence", icon: "discord" }
+};
+
+// ------------------------------------------------------------------
+// Discovery + opening
+// ------------------------------------------------------------------
+
+function buddyFiles() {
+    var out = [];
+    try {
+        var files = SCRIPT_FILE.parent.getFiles("*.jsx");
+        for (var i = 0; i < files.length; i++) {
+            var n = decodeURI(files[i].name);
+            if (n === decodeURI(SCRIPT_FILE.name)) continue;
+            if (!/Buddy\.jsx$/i.test(n)) continue;
+            out.push(n);
+        }
+    } catch (e) {}
+    out.sort();
+    return out;
+}
+
+function makeEntry(fileName) {
+    var title = fileName.replace(/\.jsx$/i, "");
+    var known = KNOWN[title];
+    return {
+        file: fileName,
+        title: title,
+        desc: (known !== undefined) ? known.desc : "Buddy plugin for After Effects",
+        icon: (known !== undefined) ? known.icon : "letter",
+        letter: title.charAt(0).toUpperCase()
+    };
+}
+
+// Toggle the real dockable panel via its Window menu entry; fall
+// back to running the file as a floating window.
+function openBuddy(fileName) {
+    var cmdId = 0;
+    try { cmdId = app.findMenuCommandId(fileName); } catch (e) { cmdId = 0; }
+    if (cmdId > 0) {
+        try { app.executeCommand(cmdId); return "panel"; } catch (e2) {}
+    }
+    try {
+        var f = new File(SCRIPT_FILE.parent.fsName + "/" + fileName);
+        if (f.exists) { $.evalFile(f); return "floating"; }
+    } catch (e3) {}
+    return null;
+}

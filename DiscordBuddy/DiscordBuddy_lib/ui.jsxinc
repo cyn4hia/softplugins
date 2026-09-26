@@ -1,0 +1,135 @@
+/**********************************************************************
+ DiscordBuddy UI  —  purple theme and custom-drawn buttons.
+
+ Spliced into DiscordBuddy.jsx's closure via //@include — not a
+ standalone script.
+**********************************************************************/
+
+// ------------------------------------------------------------------
+// Purple theme (matches GraphBuddy). Buttons are custom-drawn
+// because ScriptUI can't recolor native ones; background and text
+// tints are best-effort per platform and never break the panel.
+// ------------------------------------------------------------------
+
+var COL = {
+    panelBg:     [0.11, 0.09, 0.16, 1],
+    border:      [0.36, 0.30, 0.53, 1],
+    borderHover: [0.64, 0.54, 0.92, 1],
+    btnBg:       [0.24, 0.19, 0.37, 1],
+    btnBgHover:  [0.31, 0.25, 0.47, 1],
+    btnBgDown:   [0.38, 0.31, 0.57, 1],
+    btnText:     [0.91, 0.88, 1.00, 1],
+    text:        [0.86, 0.83, 0.95, 1],
+    muted:       [0.63, 0.58, 0.77, 1]
+};
+
+function paintBG(ctrl, color) {
+    try {
+        var g = ctrl.graphics;
+        g.backgroundColor = g.newBrush(g.BrushType.SOLID_COLOR, [color[0], color[1], color[2]]);
+    } catch (e) {}
+}
+
+function tintText(ctrl, color) {
+    try {
+        var g = ctrl.graphics;
+        g.foregroundColor = g.newPen(g.PenType.SOLID_COLOR, [color[0], color[1], color[2]], 1);
+    } catch (e) {}
+}
+
+// AE doesn't repaint custom-drawn controls on mouse enter/leave, so
+// force a redraw to make the hover highlight visible
+function hoverRepaint(ctrl) {
+    function repaint(ev) {
+        try { ev.target.notify("onDraw"); } catch (e) {}
+    }
+    ctrl.addEventListener("mouseover", repaint);
+    ctrl.addEventListener("mouseout", repaint);
+}
+
+var BTN_FONT = null;
+
+function btnFont() {
+    if (BTN_FONT === null) {
+        try { BTN_FONT = ScriptUI.newFont("dialog", ScriptUI.FontStyle.REGULAR, 11); } catch (e) {}
+    }
+    return BTN_FONT;
+}
+
+// Flat purple button: an iconbutton drawn by hand, with hover and
+// pressed states.
+function renderButton(ctrl, label) {
+    ctrl.onDraw = function (drawState) {
+        try {
+            if (!this.size) return;
+            var g = this.graphics;
+            var w = this.size.width;
+            var h = this.size.height;
+            var over = false, down = false;
+            if (drawState) {
+                over = drawState.mouseOver === true;
+                down = drawState.leftButtonPressed === true;
+            }
+            g.newPath();
+            g.rectPath(0, 0, w, h);
+            g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, down ? COL.btnBgDown : (over ? COL.btnBgHover : COL.btnBg)));
+            g.newPath();
+            g.rectPath(0, 0, w - 1, h - 1);
+            g.strokePath(g.newPen(g.PenType.SOLID_COLOR, over ? COL.borderHover : COL.border, 1));
+            var f = btnFont();
+            var tw = label.length * 5.5;
+            var th = 12;
+            try {
+                var m = g.measureString(label, f);
+                tw = m.width;
+                th = m.height;
+            } catch (eM) {}
+            var tx = (w - tw) / 2;
+            if (tx < 2) tx = 2;
+            var ty = (h - th) / 2;
+            if (ty < 0) ty = 0;
+            g.drawString(label, g.newPen(g.PenType.SOLID_COLOR, COL.btnText, 1), tx, ty, f);
+        } catch (eDraw) {}
+    };
+}
+
+// ------------------------------------------------------------------
+// Widget factories
+// ------------------------------------------------------------------
+
+// Panel header: the blob-with-eyes buddy icon + title
+function addHeader(pal) {
+    var hdr = pal.add("group");
+    hdr.orientation = "row";
+    hdr.alignChildren = ["left", "center"];
+    hdr.spacing = 6;
+    var hIcon = hdr.add("iconbutton", undefined, undefined, { style: "toolbutton" });
+    hIcon.preferredSize = [20, 20];
+    hIcon.onDraw = function () {
+        try {
+            if (!this.size) return;
+            var g = this.graphics;
+            var w = this.size.width, h = this.size.height;
+            g.newPath(); g.ellipsePath(1, h * 0.28, w - 2, h * 0.46);
+            g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, [0.55, 0.47, 0.92]));
+            var eyeB = g.newBrush(g.BrushType.SOLID_COLOR, COL.panelBg);
+            g.newPath(); g.ellipsePath(w * 0.30, h * 0.42, w * 0.13, h * 0.19); g.fillPath(eyeB);
+            g.newPath(); g.ellipsePath(w * 0.58, h * 0.42, w * 0.13, h * 0.19); g.fillPath(eyeB);
+        } catch (e) {}
+    };
+    var hTitle = hdr.add("statictext", undefined, SCRIPT_NAME);
+    try { hTitle.graphics.font = ScriptUI.newFont(hTitle.graphics.font.name, ScriptUI.FontStyle.BOLD, 12); } catch (eFH) {}
+    tintText(hTitle, COL.text);
+    return hdr;
+}
+
+function btn(parent, label, tip, fn) {
+    var b = parent.add("iconbutton", undefined, undefined, { style: "toolbutton" });
+    b.helpTip = tip;
+    b.alignment = ["fill", "center"];
+    b.preferredSize = [60, 24];
+    renderButton(b, label);
+    hoverRepaint(b);
+    b.onClick = fn;
+    return b;
+}

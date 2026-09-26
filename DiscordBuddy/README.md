@@ -10,7 +10,7 @@ It refreshes every ~15 s as you switch projects, shows session elapsed time, and
 
 ## Install
 
-1. Copy `DiscordBuddy.jsx` into the ScriptUI Panels folder:
+1. Copy `DiscordBuddy.jsx` **and** the `DiscordBuddy_lib` folder, side by side, into the ScriptUI Panels folder:
    - **macOS:** `/Applications/Adobe After Effects 2026/Scripts/ScriptUI Panels/`
    - **Windows:** `C:\Program Files\Adobe\Adobe After Effects 2026\Support Files\Scripts\ScriptUI Panels\`
 2. Restart After Effects.
@@ -33,7 +33,7 @@ The Discord application — the "Adobe After Effects" name and icon your status 
 
 Discord Rich Presence lives on a local IPC socket (a Unix domain socket on macOS, a named pipe on Windows), and ExtendScript can't open those — its `Socket` object is TCP-only. So the panel:
 
-1. extracts a small zero-dependency Node script to `~/Library/Application Support/DiscordBuddy/` (Windows: `%APPDATA%\DiscordBuddy\`) and launches it in the background;
+1. copies a small zero-dependency Node script (`DiscordBuddy_lib/discord-presence.js`) to `~/Library/Application Support/DiscordBuddy/` (Windows: `%APPDATA%\DiscordBuddy\`) and launches it in the background;
 2. writes what you're working on to `state.json` there every 15 seconds;
 3. the helper speaks Discord's IPC protocol directly, mirrors that file into your status, and exits on Stop or when the heartbeat goes stale.
 
@@ -52,4 +52,4 @@ Want your own name or icon on the status? Create a free application at [discord.
 
 ## Uninstall
 
-Press **Stop**, delete `DiscordBuddy.jsx` from the ScriptUI Panels folder, delete the `DiscordBuddy` folder from Application Support (macOS) / `%APPDATA%` (Windows), and restart After Effects.
+Press **Stop**, delete `DiscordBuddy.jsx` and the `DiscordBuddy_lib` folder from the ScriptUI Panels folder, delete the `DiscordBuddy` folder from Application Support (macOS) / `%APPDATA%` (Windows), and restart After Effects.

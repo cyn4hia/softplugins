@@ -1,0 +1,365 @@
+/**********************************************************************
+ GraphBuddy UI  —  purple theme, custom-drawn buttons and graph
+ tiles, and the widget factories every tab builds from.
+
+ Spliced into GraphBuddy.jsx's closure via //@include — not a
+ standalone script.
+**********************************************************************/
+
+// ------------------------------------------------------------------
+// Theme + drawing (each preset button draws its value graph)
+// ------------------------------------------------------------------
+
+// Purple theme. Tiles and buttons are custom-drawn (ScriptUI can't
+// recolor native buttons), the panel background is painted, and
+// text is tinted lavender where the platform allows it.
+var COL = {
+    panelBg:     [0.11, 0.09, 0.16, 1],
+    tileBg:      [0.16, 0.13, 0.24, 1],
+    tileBgHover: [0.22, 0.18, 0.33, 1],
+    tileBgDown:  [0.28, 0.23, 0.42, 1],
+    border:      [0.36, 0.30, 0.53, 1],
+    borderHover: [0.64, 0.54, 0.92, 1],
+    grid:        [0.21, 0.17, 0.31, 1],
+    curve:       [0.73, 0.58, 1.00, 1],
+    dot:         [0.99, 0.79, 0.42, 1],
+    label:       [0.86, 0.83, 0.95, 1],
+    btnBg:       [0.24, 0.19, 0.37, 1],
+    btnBgHover:  [0.31, 0.25, 0.47, 1],
+    btnBgDown:   [0.38, 0.31, 0.57, 1],
+    btnText:     [0.91, 0.88, 1.00, 1],
+    text:        [0.86, 0.83, 0.95, 1],
+    muted:       [0.63, 0.58, 0.77, 1]
+};
+
+var TILE_FONT = null;
+
+function tileFont() {
+    if (TILE_FONT === null) {
+        try { TILE_FONT = ScriptUI.newFont("dialog", ScriptUI.FontStyle.REGULAR, 9); } catch (e) {}
+    }
+    return TILE_FONT;
+}
+
+// Cubic bezier control points for a value-graph segment shaped by
+// this ease. P0=(0,0), P3=(1,1); a null side is linear (handle lies
+// on the straight line at default length).
+function curveCP(inInf, outInf) {
+    var p1x, p1y, p2x, p2y;
+    if (outInf === null) { p1x = 1 / 3; p1y = 1 / 3; }
+    else { p1x = outInf / 100; p1y = 0; }
+    if (inInf === null) { p2x = 2 / 3; p2y = 2 / 3; }
+    else { p2x = 1 - inInf / 100; p2y = 1; }
+    return [p1x, p1y, p2x, p2y];
+}
+
+function bezXY(t, cp) {
+    var mt = 1 - t;
+    var a = 3 * mt * mt * t;
+    var b = 3 * mt * t * t;
+    var c = t * t * t;
+    return [a * cp[0] + b * cp[2] + c, a * cp[1] + b * cp[3] + c];
+}
+
+// AE doesn't repaint custom-drawn controls on mouse enter/leave, so
+// force a redraw to make the hover highlight visible
+function hoverRepaint(ctrl) {
+    function repaint(ev) {
+        try { ev.target.notify("onDraw"); } catch (e) {}
+    }
+    ctrl.addEventListener("mouseover", repaint);
+    ctrl.addEventListener("mouseout", repaint);
+}
+
+// Theme helpers. Both are best-effort: some platforms ignore
+// background/foreground overrides on native controls, so failures
+// must never break the panel.
+function paintBG(ctrl, color) {
+    try {
+        var g = ctrl.graphics;
+        g.backgroundColor = g.newBrush(g.BrushType.SOLID_COLOR, [color[0], color[1], color[2]]);
+    } catch (e) {}
+}
+
+function tintText(ctrl, color) {
+    try {
+        var g = ctrl.graphics;
+        g.foregroundColor = g.newPen(g.PenType.SOLID_COLOR, [color[0], color[1], color[2]], 1);
+    } catch (e) {}
+}
+
+var BTN_FONT = null;
+
+function btnFont() {
+    if (BTN_FONT === null) {
+        try { BTN_FONT = ScriptUI.newFont("dialog", ScriptUI.FontStyle.REGULAR, 11); } catch (e) {}
+    }
+    return BTN_FONT;
+}
+
+// Flat purple button: same idea as the graph tiles — an iconbutton
+// drawn by hand, with hover and pressed states.
+function renderButton(ctrl, label) {
+    ctrl.onDraw = function (drawState) {
+        try {
+            if (!this.size) return;
+            var g = this.graphics;
+            var w = this.size.width;
+            var h = this.size.height;
+            var over = false, down = false;
+            if (drawState) {
+                over = drawState.mouseOver === true;
+                down = drawState.leftButtonPressed === true;
+            }
+            g.newPath();
+            g.rectPath(0, 0, w, h);
+            g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, down ? COL.btnBgDown : (over ? COL.btnBgHover : COL.btnBg)));
+            g.newPath();
+            g.rectPath(0, 0, w - 1, h - 1);
+            g.strokePath(g.newPen(g.PenType.SOLID_COLOR, over ? COL.borderHover : COL.border, 1));
+            var f = btnFont();
+            var tw = label.length * 5.5;
+            var th = 12;
+            try {
+                var m = g.measureString(label, f);
+                tw = m.width;
+                th = m.height;
+            } catch (eM) {}
+            var tx = (w - tw) / 2;
+            if (tx < 2) tx = 2;
+            var ty = (h - th) / 2;
+            if (ty < 0) ty = 0;
+            g.drawString(label, g.newPen(g.PenType.SOLID_COLOR, COL.btnText, 1), tx, ty, f);
+        } catch (eDraw) {}
+    };
+}
+
+// Attach a value-graph rendering to a control. getSpec() returns
+// {kind: "ease"|"linear"|"hold", inInf, outInf, label}
+function renderGraph(ctrl, getSpec) {
+    ctrl.onDraw = function (drawState) {
+        try {
+            if (!this.size) return;
+            var spec = getSpec();
+            var g = this.graphics;
+            var w = this.size.width;
+            var h = this.size.height;
+            var labelH = (spec.label === "") ? 0 : 12;
+            var over = false, down = false;
+            if (drawState) {
+                over = drawState.mouseOver === true;
+                down = drawState.leftButtonPressed === true;
+            }
+            var i;
+
+            // background
+            g.newPath();
+            g.rectPath(0, 0, w, h);
+            g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, down ? COL.tileBgDown : (over ? COL.tileBgHover : COL.tileBg)));
+
+            // plot area
+            var px = 6, py = 5;
+            var pw = w - px * 2;
+            var ph = h - labelH - py * 2;
+
+            // grid thirds
+            var gridPen = g.newPen(g.PenType.SOLID_COLOR, COL.grid, 1);
+            for (i = 1; i <= 2; i++) {
+                g.newPath();
+                g.moveTo(px + pw * i / 3, py);
+                g.lineTo(px + pw * i / 3, py + ph);
+                g.strokePath(gridPen);
+                g.newPath();
+                g.moveTo(px, py + ph * i / 3);
+                g.lineTo(px + pw, py + ph * i / 3);
+                g.strokePath(gridPen);
+            }
+
+            // border
+            g.newPath();
+            g.rectPath(0, 0, w - 1, h - 1);
+            g.strokePath(g.newPen(g.PenType.SOLID_COLOR, over ? COL.borderHover : COL.border, 1));
+
+            // curve (bez tiles may overshoot 0..1, so normalize the
+            // vertical range before mapping to pixels)
+            var yMin = 0, yMax = 1;
+            var curvePen = g.newPen(g.PenType.SOLID_COLOR, COL.curve, 2);
+            g.newPath();
+            if (spec.kind === "hold") {
+                g.moveTo(px, py + ph);
+                g.lineTo(px + pw * 0.55, py + ph);
+                g.lineTo(px + pw * 0.55, py);
+                g.lineTo(px + pw, py);
+            } else {
+                var cp = (spec.kind === "bez" && spec.cp) ? spec.cp : curveCP(spec.inInf, spec.outInf);
+                var pts = [];
+                for (i = 0; i <= 24; i++) {
+                    var pt = bezXY(i / 24, cp);
+                    pts.push(pt);
+                    if (pt[1] < yMin) yMin = pt[1];
+                    if (pt[1] > yMax) yMax = pt[1];
+                }
+                var ySpan = yMax - yMin;
+                g.moveTo(px + pts[0][0] * pw, py + (1 - (pts[0][1] - yMin) / ySpan) * ph);
+                for (i = 1; i <= 24; i++) {
+                    g.lineTo(px + pts[i][0] * pw, py + (1 - (pts[i][1] - yMin) / ySpan) * ph);
+                }
+            }
+            g.strokePath(curvePen);
+
+            // keyframe dots (at the mapped 0 and 1 values)
+            var dotBrush = g.newBrush(g.BrushType.SOLID_COLOR, COL.dot);
+            var dotY0 = py + (1 - (0 - yMin) / (yMax - yMin)) * ph;
+            var dotY1 = py + (1 - (1 - yMin) / (yMax - yMin)) * ph;
+            g.newPath();
+            g.ellipsePath(px - 2.5, dotY0 - 2.5, 5, 5);
+            g.fillPath(dotBrush);
+            g.newPath();
+            g.ellipsePath(px + pw - 2.5, dotY1 - 2.5, 5, 5);
+            g.fillPath(dotBrush);
+
+            // label
+            if (labelH > 0) {
+                var f = tileFont();
+                var tw = spec.label.length * 4.5;
+                try { tw = g.measureString(spec.label, f).width; } catch (eM) {}
+                var tx = (w - tw) / 2;
+                if (tx < 2) tx = 2;
+                g.drawString(spec.label, g.newPen(g.PenType.SOLID_COLOR, COL.label, 1), tx, h - labelH - 1, f);
+            }
+        } catch (eDraw) {}
+    };
+}
+
+// ------------------------------------------------------------------
+// Widget factories
+// ------------------------------------------------------------------
+
+function clampNum(text, def, min, max) {
+    var v = parseFloat(text);
+    if (isNaN(v)) v = def;
+    if (v < min) v = min;
+    if (v > max) v = max;
+    return v;
+}
+
+// Panel header: the S-curve buddy icon + title
+function addHeader(pal) {
+    var hdr = pal.add("group");
+    hdr.orientation = "row";
+    hdr.alignChildren = ["left", "center"];
+    hdr.spacing = 6;
+    var hIcon = hdr.add("iconbutton", undefined, undefined, { style: "toolbutton" });
+    hIcon.preferredSize = [20, 20];
+    hIcon.onDraw = function () {
+        try {
+            if (!this.size) return;
+            var g = this.graphics;
+            var w = this.size.width, h = this.size.height;
+            g.newPath(); g.rectPath(0, 0, w, h);
+            g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, COL.tileBg));
+            g.newPath(); g.rectPath(0, 0, w - 1, h - 1);
+            g.strokePath(g.newPen(g.PenType.SOLID_COLOR, COL.border, 1));
+            var cp = [0.9, 0, 0.1, 1];
+            g.newPath();
+            for (var i = 0; i <= 12; i++) {
+                var pt = bezXY(i / 12, cp);
+                var px = 3 + pt[0] * (w - 6);
+                var py = h - 3 - pt[1] * (h - 6);
+                if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+            }
+            g.strokePath(g.newPen(g.PenType.SOLID_COLOR, COL.curve, 2));
+            var dotB = g.newBrush(g.BrushType.SOLID_COLOR, COL.dot);
+            g.newPath(); g.ellipsePath(1.5, h - 5.5, 4, 4); g.fillPath(dotB);
+            g.newPath(); g.ellipsePath(w - 5.5, 1.5, 4, 4); g.fillPath(dotB);
+        } catch (e) {}
+    };
+    var hTitle = hdr.add("statictext", undefined, SCRIPT_NAME);
+    try { hTitle.graphics.font = ScriptUI.newFont(hTitle.graphics.font.name, ScriptUI.FontStyle.BOLD, 12); } catch (eFH) {}
+    tintText(hTitle, COL.text);
+    return hdr;
+}
+
+function makeTab(tp, title) {
+    var t = tp.add("tab", undefined, title);
+    t.orientation = "column";
+    t.alignChildren = ["fill", "top"];
+    t.spacing = 5;
+    t.margins = 8;
+    paintBG(t, COL.panelBg);
+    return t;
+}
+
+function row(parent) {
+    var g = parent.add("group");
+    g.orientation = "row";
+    g.alignChildren = ["fill", "center"];
+    g.alignment = ["fill", "top"];
+    g.spacing = 4;
+    return g;
+}
+
+function btn(parent, label, tip, fn) {
+    var b = parent.add("iconbutton", undefined, undefined, { style: "toolbutton" });
+    b.helpTip = tip;
+    b.alignment = ["fill", "center"];
+    b.preferredSize = [60, 24];
+    renderButton(b, label);
+    hoverRepaint(b);
+    b.onClick = fn;
+    return b;
+}
+
+function sliderRow(parent, labelTxt, def, changed) {
+    var g = row(parent);
+    g.alignChildren = ["left", "center"];
+    var st = g.add("statictext", undefined, labelTxt);
+    st.preferredSize.width = 24;
+    tintText(st, COL.text);
+    var sl = g.add("slider", undefined, def, 1, 100);
+    sl.alignment = ["fill", "center"];
+    var et = g.add("edittext", undefined, String(def));
+    et.characters = 4;
+    tintText(et, COL.text);
+    sl.onChanging = function () {
+        et.text = String(Math.round(sl.value));
+        if (changed) changed();
+    };
+    et.onChange = function () {
+        var v = clampNum(et.text, def, 1, 100);
+        et.text = String(Math.round(v));
+        sl.value = v;
+        if (changed) changed();
+    };
+    return {
+        value: function () {
+            return Math.max(1, Math.min(100, Math.round(sl.value)));
+        }
+    };
+}
+
+// A preset tile that draws its value graph and calls onApply(preset)
+// when clicked
+function makeTile(parent, preset, onApply) {
+    var c = parent.add("iconbutton", undefined, undefined, { style: "toolbutton" });
+    c.preferredSize = [58, 48];
+    c.helpTip = preset.tip;
+    renderGraph(c, function () { return preset; });
+    hoverRepaint(c);
+    c.onClick = function () { onApply(preset); };
+    return c;
+}
+
+// Lays presets out as tiles, three per row
+function tileGrid(parent, presets, onApply) {
+    var tileRow = null;
+    for (var i = 0; i < presets.length; i++) {
+        if (i % 3 === 0) {
+            tileRow = parent.add("group");
+            tileRow.orientation = "row";
+            tileRow.spacing = 4;
+            tileRow.alignment = ["center", "top"];
+        }
+        makeTile(tileRow, presets[i], onApply);
+    }
+}

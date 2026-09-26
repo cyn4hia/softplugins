@@ -1,0 +1,77 @@
+/**********************************************************************
+ DiscordBuddy util  —  platform, settings, and file helpers.
+
+ Spliced into DiscordBuddy.jsx's closure via //@include — not a
+ standalone script.
+**********************************************************************/
+
+// ------------------------------------------------------------------
+// Small helpers
+// ------------------------------------------------------------------
+
+function isWin() {
+    return $.os.indexOf("Windows") !== -1;
+}
+
+function loadSetting(key, def) {
+    try {
+        if (app.settings.haveSetting(SCRIPT_NAME, key)) return app.settings.getSetting(SCRIPT_NAME, key);
+    } catch (e) {}
+    return def;
+}
+
+function saveSetting(key, val) {
+    try { app.settings.saveSetting(SCRIPT_NAME, key, String(val)); } catch (e) {}
+}
+
+// <userData>/DiscordBuddy \u2014 macOS: ~/Library/Application Support,
+// Windows: %APPDATA%. Holds the helper, config, state, pid, log.
+function supportDir() {
+    try {
+        var f = new Folder(Folder.userData.fsName + "/" + SCRIPT_NAME);
+        if (!f.exists && !f.create()) return null;
+        return f;
+    } catch (e) { return null; }
+}
+
+function writeTextFile(file, text) {
+    try {
+        file.encoding = "UTF-8";
+        file.lineFeed = "Unix";
+        if (!file.open("w")) return false;
+        var ok = file.write(text);
+        file.close();
+        return ok;
+    } catch (e) {
+        try { file.close(); } catch (e2) {}
+        return false;
+    }
+}
+
+function readTextFile(file) {
+    try {
+        if (!file.exists) return null;
+        file.encoding = "UTF-8";
+        if (!file.open("r")) return null;
+        var text = file.read();
+        file.close();
+        return text;
+    } catch (e) {
+        try { file.close(); } catch (e2) {}
+        return null;
+    }
+}
+
+function jsonEscape(s) {
+    s = String(s);
+    var out = "";
+    for (var i = 0; i < s.length; i++) {
+        var c = s.charAt(i);
+        var code = s.charCodeAt(i);
+        if (c === '"') out += '\\"';
+        else if (c === "\\") out += "\\\\";
+        else if (code < 32) out += "\\u" + ("000" + code.toString(16)).slice(-4);
+        else out += c;
+    }
+    return out;
+}

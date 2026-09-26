@@ -1,0 +1,108 @@
+/**********************************************************************
+ GraphBuddy — Custom tab: In/Out sliders with a live preview,
+ plus Copy / Paste Ease.
+
+ Spliced into GraphBuddy.jsx's closure via //@include — not a
+ standalone script.
+**********************************************************************/
+
+// ------------------------------------------------------------------
+// Copy / paste ease
+// ------------------------------------------------------------------
+
+var easeClip = null;
+
+function dumpEase(arr) {
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+        out.push({ speed: arr[i].speed, influence: arr[i].influence });
+    }
+    return out;
+}
+
+function buildEase(src, n) {
+    var arr = [];
+    for (var i = 0; i < n; i++) {
+        var s = (i < src.length) ? src[i] : src[src.length - 1];
+        var inf = s.influence;
+        if (inf < 0.1) inf = 0.1;
+        if (inf > 100) inf = 100;
+        arr.push(new KeyframeEase(s.speed, inf));
+    }
+    return arr;
+}
+
+function copyEase() {
+    var res = getTargets();
+    if (res.error) { setStatus(res.error); return; }
+    var prop = res.targets[0].prop;
+    var ki = res.targets[0].keys[0];
+    try {
+        easeClip = {
+            inType: prop.keyInInterpolationType(ki),
+            outType: prop.keyOutInterpolationType(ki),
+            inEase: dumpEase(prop.keyInTemporalEase(ki)),
+            outEase: dumpEase(prop.keyOutTemporalEase(ki))
+        };
+    } catch (e) {
+        setStatus("Could not read ease from that keyframe.");
+        return;
+    }
+    setStatus("Copied ease (in " + Math.round(easeClip.inEase[0].influence) +
+              "% / out " + Math.round(easeClip.outEase[0].influence) + "%)");
+}
+
+function pasteEase() {
+    if (easeClip === null) {
+        setStatus("Nothing copied yet \u2014 click Copy Ease first.");
+        return;
+    }
+    applyToKeys("Paste Ease", function (prop, ki) {
+        var n = easeDim(prop, ki);
+        // Ease first, types last: setTemporalEaseAtKey forces BEZIER,
+        // which would clobber copied LINEAR/HOLD sides.
+        prop.setTemporalEaseAtKey(ki, buildEase(easeClip.inEase, n), buildEase(easeClip.outEase, n));
+        prop.setInterpolationTypeAtKey(ki, easeClip.inType, easeClip.outType);
+    });
+}
+
+// ------------------------------------------------------------------
+// Tab builder
+// ------------------------------------------------------------------
+
+function buildCustomTab(tp) {
+    var tab = makeTab(tp, "Custom");
+
+    var preview = tab.add("iconbutton", undefined, undefined, { style: "toolbutton" });
+    preview.preferredSize = [120, 66];
+    preview.alignment = ["center", "top"];
+    preview.helpTip = "Live preview of the custom ease \u2014 click to apply it";
+
+    function refreshPreview() {
+        try { preview.notify("onDraw"); } catch (e) {}
+    }
+
+    var inCtl = sliderRow(tab, "In", 75, refreshPreview);
+    var outCtl = sliderRow(tab, "Out", 25, refreshPreview);
+
+    renderGraph(preview, function () {
+        return { kind: "ease", inInf: inCtl.value(), outInf: outCtl.value(),
+                 label: "in " + inCtl.value() + "%  /  out " + outCtl.value() + "%" };
+    });
+    preview.onClick = function () {
+        applyEase(inCtl.value(), outCtl.value(), "Custom Ease");
+    };
+    hoverRepaint(preview);
+
+    var rc = row(tab);
+    btn(rc, "Apply", "Applies the In/Out influence above to the selection",
+        function () { applyEase(inCtl.value(), outCtl.value(), "Custom Ease"); });
+
+    var rcp = row(tab);
+    btn(rcp, "Copy Ease", "Copies the ease (influence + speed) from the first selected keyframe",
+        copyEase);
+    btn(rcp, "Paste Ease", "Pastes the copied ease onto the selection",
+        pasteEase);
+
+    return tab;
+}

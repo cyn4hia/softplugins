@@ -8,7 +8,7 @@ A small dockable launcher that lists every Buddy plugin installed on your machin
 
 ## Install
 
-1. Copy `BuddyHub.jsx` into the ScriptUI Panels folder — the **same folder as the buddies**:
+1. Copy `BuddyHub.jsx` **and** the `BuddyHub_lib` folder, side by side, into the ScriptUI Panels folder — the **same folder as the buddies**:
    - **macOS:** `/Applications/Adobe After Effects 2026/Scripts/ScriptUI Panels/`
    - **Windows:** `C:\Program Files\Adobe\Adobe After Effects 2026\Support Files\Scripts\ScriptUI Panels\`
 2. Restart After Effects.
@@ -22,4 +22,4 @@ A small dockable launcher that lists every Buddy plugin installed on your machin
 
 ## Uninstall
 
-Delete `BuddyHub.jsx` from the ScriptUI Panels folder and restart After Effects. The buddies themselves are unaffected — the hub is just a launcher.
+Delete `BuddyHub.jsx` and the `BuddyHub_lib` folder from the ScriptUI Panels folder and restart After Effects. The buddies themselves are unaffected — the hub is just a launcher.

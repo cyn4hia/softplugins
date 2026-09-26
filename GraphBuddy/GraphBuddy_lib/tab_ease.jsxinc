@@ -1,0 +1,73 @@
+/**********************************************************************
+ GraphBuddy — Ease tab: 12 graph-tile presets (influence eases,
+ Linear, Hold).
+
+ Spliced into GraphBuddy.jsx's closure via //@include — not a
+ standalone script.
+**********************************************************************/
+
+// ------------------------------------------------------------------
+// Interpolation-type presets
+// ------------------------------------------------------------------
+
+function applyLinear() {
+    applyToKeys("Linear", function (prop, ki) {
+        prop.setInterpolationTypeAtKey(ki, KeyframeInterpolationType.LINEAR, KeyframeInterpolationType.LINEAR);
+    });
+}
+
+function applyHold() {
+    applyToKeys("Hold", function (prop, ki) {
+        prop.setInterpolationTypeAtKey(ki, prop.keyInInterpolationType(ki), KeyframeInterpolationType.HOLD);
+    });
+}
+
+// ------------------------------------------------------------------
+// Preset definitions \u2014 one tile per graph shape
+// ------------------------------------------------------------------
+
+var PRESETS = [
+    { label: "Linear", kind: "linear", inInf: null, outInf: null,
+      tip: "Linear \u2014 straight-line interpolation, no ease" },
+    { label: "Hold", kind: "hold", inInf: null, outInf: null,
+      tip: "Hold \u2014 freeze the value until the next keyframe" },
+    { label: "Easy Ease", kind: "ease", inInf: 33.3333, outInf: 33.3333,
+      tip: "Easy Ease \u2014 the classic F9 curve (33% in / 33% out)" },
+
+    { label: "Smooth", kind: "ease", inInf: 75, outInf: 75,
+      tip: "Smooth \u2014 softer drift (75% in / 75% out)" },
+    { label: "Buttery", kind: "ease", inInf: 90, outInf: 90,
+      tip: "Buttery \u2014 very floaty, steep middle (90% in / 90% out)" },
+    { label: "Snappy", kind: "ease", inInf: 90, outInf: 10,
+      tip: "Snappy \u2014 leaves fast, lands soft (90% in / 10% out). The \"modern app motion\" curve." },
+
+    { label: "Ease In", kind: "ease", inInf: 75, outInf: null,
+      tip: "Ease In \u2014 soft landing into each keyframe only (75% in, outgoing stays linear)" },
+    { label: "Ease Out", kind: "ease", inInf: null, outInf: 75,
+      tip: "Ease Out \u2014 soft launch out of each keyframe only (75% out, incoming stays linear)" },
+    { label: "Wind Up", kind: "ease", inInf: 15, outInf: 85,
+      tip: "Wind Up \u2014 leaves slow, arrives fast (15% in / 85% out)" },
+
+    { label: "Deep In", kind: "ease", inInf: 95, outInf: null,
+      tip: "Deep In \u2014 long floaty landing (95% in, outgoing stays linear)" },
+    { label: "Deep Out", kind: "ease", inInf: null, outInf: 95,
+      tip: "Deep Out \u2014 long floaty launch (95% out, incoming stays linear)" },
+    { label: "Whip", kind: "ease", inInf: 97, outInf: 3,
+      tip: "Whip \u2014 near-instant move, long settle (97% in / 3% out)" }
+];
+
+function applyPreset(preset) {
+    if (preset.kind === "hold") applyHold();
+    else if (preset.kind === "linear") applyLinear();
+    else applyEase(preset.inInf, preset.outInf, preset.label);
+}
+
+// ------------------------------------------------------------------
+// Tab builder
+// ------------------------------------------------------------------
+
+function buildEaseTab(tp) {
+    var tab = makeTab(tp, "Ease");
+    tileGrid(tab, PRESETS, applyPreset);
+    return tab;
+}
