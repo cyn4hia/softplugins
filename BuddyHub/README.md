@@ -3,6 +3,7 @@
 A small dockable launcher that lists every Buddy plugin installed on your machine, each with its own icon and description. Click a buddy to open its panel (click again to close it). It's the "home page" for the family:
 
 - **GraphBuddy** — ease-curve icon, one-click graph editor eases
+- **TextBuddy** — T-and-underline icon, Apple-style text animation
 - **DiscordBuddy** — blob icon, Discord Rich Presence
 - any future buddy — appears automatically with a letter badge
 

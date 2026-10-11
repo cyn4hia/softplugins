@@ -1,0 +1,354 @@
+/**********************************************************************
+ TextBuddy core  —  text layers and range selectors, timeline
+ selection + reveal, and the keyframe helpers every tab uses.
+
+ Spliced into TextBuddy.jsx's closure via //@include — not a
+ standalone script.
+**********************************************************************/
+
+// ------------------------------------------------------------------
+// Comp + layers
+// ------------------------------------------------------------------
+
+function activeComp() {
+    var item = app.project.activeItem;
+    return (item !== null && item instanceof CompItem) ? item : null;
+}
+
+function selectedTextLayers(comp) {
+    var out = [];
+    var picked = comp.selectedLayers;
+    for (var i = 0; i < picked.length; i++) {
+        if (picked[i] instanceof TextLayer) out.push(picked[i]);
+    }
+    return out;
+}
+
+function playheadLabel(comp, t) {
+    var when = t.toFixed(2) + "s";
+    try { when = timeToCurrentFormat(t, comp.frameRate); } catch (e) {}
+    return when;
+}
+
+// ------------------------------------------------------------------
+// Text animators
+//
+// addProperty can leave older references on the layer invalid, so
+// these hand out indices and everything is re-fetched from the layer
+// after each add.
+// ------------------------------------------------------------------
+
+function textAnimators(layer) {
+    return layer.property("ADBE Text Properties").property("ADBE Text Animators");
+}
+
+function animatorAt(layer, ai) {
+    return textAnimators(layer).property(ai);
+}
+
+// The newest animator called name, or a new one (always new when
+// fresh). Returns { index, isNew }.
+function ensureAnimator(layer, name, fresh) {
+    var anims = textAnimators(layer);
+    if (!fresh) {
+        for (var i = anims.numProperties; i >= 1; i--) {
+            if (anims.property(i).name === name) return { index: i, isNew: false };
+        }
+    }
+    var a = anims.addProperty("ADBE Text Animator");
+    a.name = name;
+    return { index: a.propertyIndex, isNew: true };
+}
+
+// Index of the animator's first range selector, adding one if needed
+function ensureRangeSelector(layer, ai) {
+    var sels = animatorAt(layer, ai).property("ADBE Text Selectors");
+    for (var i = 1; i <= sels.numProperties; i++) {
+        if (sels.property(i).matchName === "ADBE Text Selector") return i;
+    }
+    return sels.addProperty("ADBE Text Selector").propertyIndex;
+}
+
+function selectorAt(layer, ai, si) {
+    return animatorAt(layer, ai).property("ADBE Text Selectors").property(si);
+}
+
+// The animator's property (Opacity, Position...), adding it if needed
+function ensureAnimProp(layer, ai, match) {
+    var props = animatorAt(layer, ai).property("ADBE Text Animator Properties");
+    if (props.property(match) === null) props.addProperty(match);
+    return animatorAt(layer, ai).property("ADBE Text Animator Properties").property(match);
+}
+
+// Range Selector > Advanced. Shape and Based On aren't in Adobe's
+// match-name docs, so fall back to their display names.
+function setAdvanced(sel, match, display, v, t) {
+    try {
+        var adv = sel.property("ADBE Text Range Advanced");
+        var p = adv.property(match);
+        if (p === null) p = adv.property(display);
+        setNow(p, v, t);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+// An animator property's new value: v on spec.axis only (Position Y),
+// or v on every dimension when there's no axis (Scale, Blur)
+function textAmount(spec, cur, v) {
+    if (!(cur instanceof Array)) return v;
+    var out = [];
+    for (var i = 0; i < cur.length; i++) {
+        if (spec.axis === undefined) out.push(v);
+        else out.push(i === spec.axis ? v : cur[i]);
+    }
+    return out;
+}
+
+// Range selectors anywhere under group (Animators, one Animator, or
+// its Selectors)
+function collectSelectors(group, out) {
+    for (var i = 1; i <= group.numProperties; i++) {
+        var p = group.property(i);
+        if (p.matchName === "ADBE Text Selector") out.push(p);
+        else if (p.propertyType !== PropertyType.PROPERTY) collectSelectors(p, out);
+    }
+}
+
+// AE hands out a fresh wrapper object on every access, so === can't
+// tell whether two references are the same property
+function propKey(p) {
+    var path = [];
+    for (var q = p; q.propertyDepth > 0; q = q.parentProperty) path.unshift(q.propertyIndex);
+    return p.propertyGroup(p.propertyDepth).index + ":" + path.join(".");
+}
+
+// Range selectors to key, in priority order:
+//   1) the ones in whatever animators / selectors (or anything inside
+//      them) are selected in the timeline
+//   2) every range selector on the selected text layers
+function textSelectorTargets(comp) {
+    var found = [], out = [], seen = {};
+    var i;
+    var props = comp.selectedProperties;
+    for (i = 0; i < props.length; i++) {
+        var q = props[i];
+        while (q.propertyDepth > 0 && q.matchName !== "ADBE Text Selector" &&
+               q.matchName !== "ADBE Text Animator" && q.matchName !== "ADBE Text Animators") {
+            q = q.parentProperty;
+        }
+        if (q.propertyDepth === 0) continue;
+        if (q.matchName === "ADBE Text Selector") found.push(q);
+        else collectSelectors(q, found);
+    }
+    if (found.length === 0) {
+        var layers = selectedTextLayers(comp);
+        for (i = 0; i < layers.length; i++) collectSelectors(textAnimators(layers[i]), found);
+    }
+    for (i = 0; i < found.length; i++) {
+        var k = propKey(found[i]);
+        if (seen[k] !== true) {
+            seen[k] = true;
+            out.push(found[i]);
+        }
+    }
+    return out;
+}
+
+// ------------------------------------------------------------------
+// Timeline selection + reveal
+// ------------------------------------------------------------------
+
+// Leaves only these properties selected (and, withKeys, all their
+// keyframes), so an ease clicked next lands on exactly them
+function selectOnly(comp, props, withKeys) {
+    var cur = comp.selectedProperties;
+    var i, k;
+    for (i = cur.length - 1; i >= 0; i--) {
+        try {
+            if (cur[i].propertyType === PropertyType.PROPERTY) {
+                var sk = cur[i].selectedKeys;
+                for (k = 0; k < sk.length; k++) cur[i].setSelectedAtKey(sk[k], false);
+            }
+            cur[i].selected = false;
+        } catch (e) {}
+    }
+    for (i = 0; i < props.length; i++) {
+        try {
+            props[i].selected = true;
+            if (withKeys) {
+                for (k = 1; k <= props[i].numKeys; k++) props[i].setSelectedAtKey(k, true);
+            }
+        } catch (e2) {}
+    }
+}
+
+// AE has no scripting call to twirl a property open in the timeline
+// (selecting it doesn't). The known workaround: give each one a
+// deliberately broken expression, run Reveal Expression Errors —
+// which twirls open exactly the erroring properties and folds the
+// rest — then put the original expressions back. Runs inside the
+// caller's undo group. Returns false when the command isn't there.
+function revealProps(props, t) {
+    var cmd = 0;
+    try { cmd = app.findMenuCommandId("Reveal Expression Errors"); } catch (e) { cmd = 0; }
+    if (!cmd) return false;
+
+    var saved = [];
+    var i;
+    for (i = 0; i < props.length; i++) {
+        var p = props[i];
+        try {
+            if (!p.canSetExpression) continue;
+            saved.push({ prop: p, expr: p.expression, on: p.expressionEnabled });
+            p.expression = "textBuddyReveal_"; // undefined name: always an error
+            try { p.valueAtTime(t, false); } catch (eV) {} // evaluate now so the error registers
+        } catch (eX) {}
+    }
+    var ok = false;
+    try {
+        app.executeCommand(cmd);
+        ok = saved.length > 0;
+    } catch (eC) {}
+    for (i = 0; i < saved.length; i++) {
+        try {
+            saved[i].prop.expression = saved[i].expr;
+            if (saved[i].expr !== "") saved[i].prop.expressionEnabled = saved[i].on;
+        } catch (eR) {}
+    }
+    return ok;
+}
+
+// Select + twirl open: what every button does with the keys it made
+function showKeys(comp, props, t) {
+    selectOnly(comp, props, true);
+    return revealProps(props, t);
+}
+
+// ------------------------------------------------------------------
+// Keyframe helpers
+// ------------------------------------------------------------------
+
+// Keyed properties refuse setValue; key them at the playhead instead
+function setNow(prop, v, t) {
+    if (prop.numKeys > 0) prop.setValueAtTime(t, v);
+    else prop.setValue(v);
+}
+
+function clearKeys(prop) {
+    for (var k = prop.numKeys; k >= 1; k--) prop.removeKey(k);
+}
+
+// Ease arrays must match the property's dimension count (1 for 1D and
+// spatial, 2/3 for multi-D); reading an existing ease avoids guessing
+function easeDim(prop, k) {
+    var n = 1;
+    try { n = prop.keyInTemporalEase(k).length; } catch (e) {}
+    return n;
+}
+
+// speed: one number, or one per dimension
+function easeList(n, speed, influence) {
+    if (influence < 0.1) influence = 0.1;
+    if (influence > 100) influence = 100;
+    var arr = [];
+    for (var i = 0; i < n; i++) arr.push(new KeyframeEase((speed instanceof Array) ? speed[i] : speed, influence));
+    return arr;
+}
+
+// Eases one side ("in"/"out") of key k; the other side keeps its ease
+// and type. setTemporalEaseAtKey forces both sides to BEZIER, so the
+// types are written back last.
+function easeSide(prop, k, side, speed, influence) {
+    var B = KeyframeInterpolationType.BEZIER;
+    var n = easeDim(prop, k);
+    var inT = prop.keyInInterpolationType(k);
+    var outT = prop.keyOutInterpolationType(k);
+    var inE = prop.keyInTemporalEase(k);
+    var outE = prop.keyOutTemporalEase(k);
+    if (side === "in") { inE = easeList(n, speed, influence); inT = B; }
+    else { outE = easeList(n, speed, influence); outT = B; }
+    prop.setTemporalEaseAtKey(k, inE, outE);
+    prop.setInterpolationTypeAtKey(k, inT, outT);
+}
+
+// Replaces every key with a straight two-key sweep (range-selector
+// Offsets: their easing comes from Ease High / Low, not the keys)
+function linearSweep(prop, t0, v0, t1, v1) {
+    var L = KeyframeInterpolationType.LINEAR;
+    clearKeys(prop);
+    prop.setValueAtTime(t0, v0);
+    prop.setValueAtTime(t1, v1);
+    for (var k = 1; k <= prop.numKeys; k++) prop.setInterpolationTypeAtKey(k, L, L);
+}
+
+// The Apple ease: leaves abruptly, then a long soft landing
+var APPLE_OUT = 15;
+var APPLE_IN = 85;
+
+function appleMove(prop, t0, v0, t1, v1) {
+    prop.setValueAtTime(t0, v0);
+    prop.setValueAtTime(t1, v1);
+    easeSide(prop, prop.nearestKeyIndex(t0), "out", 0, APPLE_OUT);
+    easeSide(prop, prop.nearestKeyIndex(t1), "in", 0, APPLE_IN);
+}
+
+function dimAt(v, i) {
+    return (v instanceof Array) ? v[i] : v;
+}
+
+function lerpValue(a, b, f) {
+    if (!(a instanceof Array)) return a + (b - a) * f;
+    var out = [];
+    for (var i = 0; i < a.length; i++) out.push(a[i] + (b[i] - a[i]) * f);
+    return out;
+}
+
+function distance(a, b) {
+    var sum = 0;
+    for (var i = 0; i < a.length; i++) sum += (b[i] - a[i]) * (b[i] - a[i]);
+    return Math.sqrt(sum);
+}
+
+// The video's 3-keyframe trick: the move lands DRIFT short of its
+// target at t1, then keeps creeping the rest of the way until tEnd,
+// so nothing in the shot ever fully stops. The middle key carries a
+// matching speed straight through (no stall at the hand-off).
+var DRIFT = 0.05;
+
+function driftMove(prop, t0, v0, t1, v1, tEnd) {
+    var m = t1 - t0;
+    var T = tEnd - t1;
+    if (T <= m * 0.5) {
+        appleMove(prop, t0, v0, t1, v1);
+        return;
+    }
+    var vMid = lerpValue(v0, v1, 1 - DRIFT);
+    prop.setValueAtTime(t0, v0);
+    prop.setValueAtTime(t1, vMid);
+    prop.setValueAtTime(tEnd, v1);
+    var k1 = prop.nearestKeyIndex(t1);
+    var n = easeDim(prop, k1);
+
+    // Speed through the middle key: what an even slow-down covering
+    // the drift starts at, capped so the main move still lands soft
+    var sp = [];
+    if (n === 1 && (v0 instanceof Array)) {
+        // spatial: one speed along the path
+        sp.push(Math.min(2 * distance(vMid, v1) / T, 0.6 * distance(v0, vMid) / m));
+    } else {
+        for (var i = 0; i < n; i++) {
+            var cap = 0.6 * Math.abs(dimAt(vMid, i) - dimAt(v0, i)) / m;
+            var s = 2 * (dimAt(v1, i) - dimAt(vMid, i)) / T;
+            sp.push(Math.max(-cap, Math.min(cap, s)));
+        }
+    }
+
+    var B = KeyframeInterpolationType.BEZIER;
+    easeSide(prop, prop.nearestKeyIndex(t0), "out", 0, APPLE_OUT);
+    prop.setTemporalEaseAtKey(k1, easeList(n, sp, APPLE_IN), easeList(n, sp, 33.3333));
+    prop.setInterpolationTypeAtKey(k1, B, B);
+    try { prop.setTemporalContinuousAtKey(k1, true); } catch (e) {}
+    easeSide(prop, prop.nearestKeyIndex(tEnd), "in", 0, 66);
+}

@@ -14,6 +14,7 @@
 
 var KNOWN = {
     GraphBuddy:   { desc: "One-click graph editor eases", icon: "graph" },
+    TextBuddy:    { desc: "Apple-style text animation", icon: "text" },
     DiscordBuddy: { desc: "Discord Rich Presence", icon: "discord" }
 };
 

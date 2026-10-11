@@ -37,6 +37,19 @@ Each tile shows its value-graph shape. Hover any tile for the exact influence va
 | **Deep Out** | Long floaty launch (95 out, incoming linear) |
 | **Whip** | Near-instant move, long settle (97 in / 3 out) |
 
+### ◇ Key at Playhead
+
+Under the tiles: the timeline's keyframe diamond, but for everything you have selected at once. It **duplicates the keyframe before the playhead onto the playhead** — value, ease, interpolation, and label color — on each property, using that property's own previous key.
+
+- **Keys selected:** the selected keys are what get copied (one per property; if a property has several selected, the last one before the playhead). Select keys on as many layers as you like — AE's own copy/paste only works one layer at a time.
+- **Properties or layers selected:** copies each animated property's previous key.
+- **Playhead before the first key:** copies the first key instead.
+- **Already keyed at the playhead:** that property is left alone.
+
+A copy next to an identical key makes a hold, and those normally drift in AE (auto-bezier bows the motion path between two identical position keys). Key at Playhead pins that hold segment dead still, and the moves before and after it keep their original ease.
+
+**Alt/Option-click** keys the *current* value instead, exactly like AE's ◇. The motion stays the same and you can adjust the new key from there.
+
 ## Flow tab — cubic-bezier graph pack
 
 The "cleanest graphs" curves, defined as cubic-beziers and applied **per segment** (each pair of consecutive keys): the outgoing side of the first key and the incoming side of the second, with keyframe *speeds* computed from each segment's value change — so curves that arrive or launch with velocity (Fast In's whip, Fast Out's launch) reproduce exactly, something influence-only eases can't do.

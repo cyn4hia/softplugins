@@ -1,6 +1,6 @@
 /**********************************************************************
  GraphBuddy — Ease tab: 12 graph-tile presets (influence eases,
- Linear, Hold).
+ Linear, Hold), plus Key at Playhead.
 
  Spliced into GraphBuddy.jsx's closure via //@include — not a
  standalone script.
@@ -63,11 +63,214 @@ function applyPreset(preset) {
 }
 
 // ------------------------------------------------------------------
+// Key at playhead — the timeline's ◇, for any number of
+// properties at once
+//
+// Duplicates a keyframe onto the playhead: the last target key
+// before it (so with keys selected, the selected one), or the first
+// one after it when the playhead is before them all. The copy keeps
+// the source's value, ease, interpolation, and label color.
+//
+// A copy right next to an identical key is a hold, and AE's default
+// auto-bezier would make it drift (the classic "wobble between two
+// identical position keys"). So that segment is pinned dead still
+// — zero speed, zero-length spatial handles — while every
+// other side keeps its pre-insert ease, so the move before the hold
+// and the move after it look exactly as they did.
+// ------------------------------------------------------------------
+
+// Everything needed to rebuild a key, read before any edit shifts
+// the indices
+function snapKey(prop, ki) {
+    var s = {
+        value: prop.keyValue(ki),
+        inType: prop.keyInInterpolationType(ki),
+        outType: prop.keyOutInterpolationType(ki),
+        inEase: prop.keyInTemporalEase(ki),
+        outEase: prop.keyOutTemporalEase(ki),
+        tCont: prop.keyTemporalContinuous(ki),
+        tAuto: prop.keyTemporalAutoBezier(ki),
+        label: null,
+        spatial: false
+    };
+    try { s.label = prop.keyLabel(ki); } catch (eL) {} // AE 22.6+
+    if (prop.isSpatial) {
+        try {
+            s.inTan = prop.keyInSpatialTangent(ki);
+            s.outTan = prop.keyOutSpatialTangent(ki);
+            s.sCont = prop.keySpatialContinuous(ki);
+            s.sAuto = prop.keySpatialAutoBezier(ki);
+            s.spatial = true;
+        } catch (eS) {}
+    }
+    return s;
+}
+
+function stampKey(prop, ki, s) {
+    prop.setValueAtKey(ki, s.value);
+    // Ease first, types last: setTemporalEaseAtKey forces BEZIER.
+    prop.setTemporalEaseAtKey(ki, s.inEase, s.outEase);
+    prop.setInterpolationTypeAtKey(ki, s.inType, s.outType);
+    try { prop.setTemporalContinuousAtKey(ki, s.tCont); } catch (e1) {}
+    try { prop.setTemporalAutoBezierAtKey(ki, s.tAuto); } catch (e2) {}
+    if (s.spatial) {
+        try {
+            prop.setSpatialContinuousAtKey(ki, s.sCont);
+            prop.setSpatialAutoBezierAtKey(ki, s.sAuto);
+            if (!s.sAuto) prop.setSpatialTangentsAtKey(ki, s.inTan, s.outTan);
+        } catch (e3) {}
+    }
+    if (s.label !== null) {
+        try { prop.setLabelAtKey(ki, s.label); } catch (e4) {}
+    }
+}
+
+// Numbers and arrays only; shapes/text never count as a hold (they
+// have no speed or spatial handles to pin anyway)
+function sameValue(a, b) {
+    var i;
+    if (typeof a === "number" && typeof b === "number") return Math.abs(a - b) < 1e-4;
+    if (a instanceof Array && b instanceof Array && a.length === b.length) {
+        for (i = 0; i < a.length; i++) {
+            if (Math.abs(a[i] - b[i]) >= 1e-4) return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+function stillEase(arr) {
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+        out.push(new KeyframeEase(0, Math.max(0.1, Math.min(100, arr[i].influence))));
+    }
+    return out;
+}
+
+// Pins one side ("in"/"out") of key ki dead still. The other side is
+// restored from keep (a pre-insert snapshot), or left as-is when
+// keep is null.
+function stillSide(prop, ki, side, keep) {
+    try {
+        var inT = prop.keyInInterpolationType(ki);
+        var outT = prop.keyOutInterpolationType(ki);
+        // LINEAR/HOLD sides are already flat across an unchanged value
+        if ((side === "in" ? inT : outT) === KeyframeInterpolationType.BEZIER) {
+            var inE = keep ? keep.inEase : prop.keyInTemporalEase(ki);
+            var outE = keep ? keep.outEase : prop.keyOutTemporalEase(ki);
+            prop.setTemporalAutoBezierAtKey(ki, false);
+            prop.setTemporalContinuousAtKey(ki, false);
+            if (side === "in") inE = stillEase(inE); else outE = stillEase(outE);
+            prop.setTemporalEaseAtKey(ki, inE, outE);
+            prop.setInterpolationTypeAtKey(ki, inT, outT);
+        }
+    } catch (eT) {}
+    if (prop.isSpatial) {
+        try {
+            var inTan = (keep && keep.spatial) ? keep.inTan : prop.keyInSpatialTangent(ki);
+            var outTan = (keep && keep.spatial) ? keep.outTan : prop.keyOutSpatialTangent(ki);
+            var zero = [];
+            for (var d = 0; d < inTan.length; d++) zero.push(0);
+            prop.setSpatialAutoBezierAtKey(ki, false);
+            prop.setSpatialContinuousAtKey(ki, false);
+            if (side === "in") prop.setSpatialTangentsAtKey(ki, zero, outTan);
+            else prop.setSpatialTangentsAtKey(ki, inTan, zero);
+        } catch (eSp) {}
+    }
+}
+
+// keys: this property's target key indices (selected, or all)
+function dupKeyAt(prop, keys, t) {
+    var src = -1, after = -1;
+    for (var j = 0; j < keys.length; j++) {
+        if (prop.keyTime(keys[j]) < t) {
+            if (keys[j] > src) src = keys[j];
+        } else if (after === -1 || keys[j] < after) {
+            after = keys[j];
+        }
+    }
+    if (src === -1) src = after;
+
+    // neighbors on the timeline, whatever the selection
+    var p = 0;
+    while (p < prop.numKeys && prop.keyTime(p + 1) < t) p++;
+    var s = snapKey(prop, src);
+    var prev = (p >= 1) ? snapKey(prop, p) : null;
+    var next = (p < prop.numKeys) ? snapKey(prop, p + 1) : null;
+
+    var k = prop.addKey(t);
+    // The key exists from here on; if a later call is refused it just
+    // keeps AE's defaults for that part, like the timeline's diamond.
+    try {
+        stampKey(prop, k, s);
+        if (prev !== null && sameValue(prev.value, s.value)) {
+            stillSide(prop, k - 1, "out", prev);
+            stillSide(prop, k, "in", null);
+        }
+        if (next !== null && sameValue(next.value, s.value)) {
+            stillSide(prop, k, "out", null);
+            stillSide(prop, k + 1, "in", next);
+        }
+    } catch (e) {}
+}
+
+// atValue: key the current (interpolated) value instead, exactly like
+// the timeline's diamond — the motion doesn't change
+function keyAtPlayhead(atValue) {
+    var res = getTargets();
+    if (res.error) { setStatus(res.error); return; }
+
+    var comp = activeComp();
+    var t = comp.time;
+    var tol = comp.frameDuration / 2;
+    var label = atValue ? "Key Current Value" : "Key at Playhead";
+    var added = 0, already = 0;
+
+    app.beginUndoGroup(SCRIPT_NAME + ": " + label);
+    try {
+        for (var i = 0; i < res.targets.length; i++) {
+            var prop = res.targets[i].prop;
+            if (Math.abs(prop.keyTime(prop.nearestKeyIndex(t)) - t) < tol) {
+                already++;
+                continue;
+            }
+            try {
+                if (atValue) prop.addKey(t);
+                else dupKeyAt(prop, res.targets[i].keys, t);
+                added++;
+            } catch (e) {}
+        }
+    } finally {
+        app.endUndoGroup();
+    }
+
+    var when = t.toFixed(2) + "s";
+    try { when = timeToCurrentFormat(t, comp.frameRate); } catch (eT) {}
+    var msg = label + " → " + added + (added === 1 ? " key" : " keys") + " at " + when +
+              " (" + res.mode + ")";
+    if (already > 0) msg += ", " + already + " already keyed";
+    setStatus(msg);
+}
+
+// ------------------------------------------------------------------
 // Tab builder
 // ------------------------------------------------------------------
 
 function buildEaseTab(tp) {
     var tab = makeTab(tp, "Ease");
     tileGrid(tab, PRESETS, applyPreset);
+
+    var rk = row(tab);
+    btn(rk, "Key at Playhead",
+        "Copies the keyframe before the playhead onto the playhead (value + ease) on every " +
+        "selected property/layer — or the selected keys, when keys are selected. Holds stay " +
+        "dead still (no auto-bezier drift). Alt-click: key the current value instead, like the " +
+        "timeline's ◇.",
+        function () {
+            var alt = false;
+            try { alt = ScriptUI.environment.keyboardState.altKey === true; } catch (e) {}
+            keyAtPlayhead(alt);
+        }, "key");
+
     return tab;
 }

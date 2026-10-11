@@ -97,9 +97,23 @@ function btnFont() {
     return BTN_FONT;
 }
 
+// AE's keyframe diamond, in the tile-dot gold (filled like the
+// timeline's when it's "on")
+function drawKeyDiamond(g, cx, cy, r, filled) {
+    g.newPath();
+    g.moveTo(cx, cy - r);
+    g.lineTo(cx + r, cy);
+    g.lineTo(cx, cy + r);
+    g.lineTo(cx - r, cy);
+    g.closePath();
+    if (filled) g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, COL.dot));
+    else g.strokePath(g.newPen(g.PenType.SOLID_COLOR, COL.dot, 1.5));
+}
+
 // Flat purple button: same idea as the graph tiles — an iconbutton
-// drawn by hand, with hover and pressed states.
-function renderButton(ctrl, label) {
+// drawn by hand, with hover and pressed states. icon "key" puts a
+// keyframe diamond before the label.
+function renderButton(ctrl, label, icon) {
     ctrl.onDraw = function (drawState) {
         try {
             if (!this.size) return;
@@ -125,11 +139,13 @@ function renderButton(ctrl, label) {
                 tw = m.width;
                 th = m.height;
             } catch (eM) {}
-            var tx = (w - tw) / 2;
+            var iw = (icon === "key") ? 14 : 0; // 9px diamond + gap
+            var tx = (w - tw - iw) / 2;
             if (tx < 2) tx = 2;
             var ty = (h - th) / 2;
             if (ty < 0) ty = 0;
-            g.drawString(label, g.newPen(g.PenType.SOLID_COLOR, COL.btnText, 1), tx, ty, f);
+            if (iw > 0) drawKeyDiamond(g, tx + 4.5, h / 2, 4.5, over);
+            g.drawString(label, g.newPen(g.PenType.SOLID_COLOR, COL.btnText, 1), tx + iw, ty, f);
         } catch (eDraw) {}
     };
 }
@@ -299,12 +315,12 @@ function row(parent) {
     return g;
 }
 
-function btn(parent, label, tip, fn) {
+function btn(parent, label, tip, fn, icon) {
     var b = parent.add("iconbutton", undefined, undefined, { style: "toolbutton" });
     b.helpTip = tip;
     b.alignment = ["fill", "center"];
     b.preferredSize = [60, 24];
-    renderButton(b, label);
+    renderButton(b, label, icon);
     hoverRepaint(b);
     b.onClick = fn;
     return b;

@@ -1,8 +1,9 @@
 /**********************************************************************
  GraphBuddy.jsx  \u2014  one-click graph editor eases for After Effects
- v4.5  (split into modules under GraphBuddy_lib/; behavior unchanged
-        from v4.4 \u2014 purple UI, graph-only: Ease, Flow, and Custom
-        tabs.)
+ v4.6  (Ease tab gains Key at Playhead: duplicates the previous /
+        selected keyframe onto the playhead across every selected
+        property and layer, with drift-free holds. v4.5 split the
+        panel into modules under GraphBuddy_lib/.)
 
  Install (After Effects 2026): copy GraphBuddy.jsx AND the
  GraphBuddy_lib folder, side by side, into
@@ -23,7 +24,7 @@
    GraphBuddy_lib/
      core.jsxinc              smart selection + influence-ease engine
      ui.jsxinc                theme, custom drawing, widget factories
-     tab_ease.jsxinc          Ease tab  (graph-tile presets)
+     tab_ease.jsxinc          Ease tab  (graph-tile presets, key at playhead)
      tab_flow.jsxinc          Flow tab  (cubic-bezier segment engine)
      tab_custom.jsxinc        Custom tab (sliders, copy/paste ease)
  Modules use .jsxinc so AE doesn't list them in the Window menu.

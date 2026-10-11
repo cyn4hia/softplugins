@@ -1,0 +1,385 @@
+/**********************************************************************
+ TextBuddy — Apple tab: the "animate text like Apple" looks from
+ Motion By Scott's tutorial, one click each.
+
+   Drop       characters fall in from above (Ramp Up position sweep,
+              Ease Low 80) with a separate fade, based on characters
+   Rise       words rise in from below (Ease High 60 / Low 80) + fade
+   Slide      the whole layer slides up, abrupt start, long landing
+   Slide Cut  match cut: outgoing text slides away, incoming takes
+              over mid-move and keeps drifting (the 3-keyframe trick)
+   Scale Cut  match cut through a scale-up, carried by a null
+   Underline  a hand-drawn underline: tapered, round-capped, a touch
+              of Turbulent Displace, drawn on with Trim Paths
+
+ Spliced into TextBuddy.jsx's closure via //@include — not a
+ standalone script.
+**********************************************************************/
+
+var APPLE_STYLES = [
+    { label: "Drop", kind: "drop", by: 1, dir: -1, easeHigh: 0, easeLow: 80,
+      tip: "Drop \u2014 characters fall into place from above and fade in, one after another. " +
+           "Two animators like the video: Position on a Ramp Up range selector (Ease Low 80%) " +
+           "plus a separate Opacity fade, both swept from the playhead over Frames." },
+    { label: "Rise", kind: "rise", by: 3, dir: 1, easeHigh: 60, easeLow: 80,
+      tip: "Rise \u2014 words rise into place from below and fade in (Ramp Up, Ease High 60% / " +
+           "Low 80%, based on Words), swept from the playhead over Frames." },
+    { label: "Slide", kind: "slide", dir: 1,
+      tip: "Slide \u2014 the whole layer slides up Dist px into place with the Apple ease: an " +
+           "abrupt start and a long soft landing. Works on any layer." }
+];
+
+var APPLE_CUTS = [
+    { label: "Slide Cut", kind: "slidecut",
+      tip: "Slide match cut \u2014 select the outgoing and incoming layers, playhead where the " +
+           "exit move starts. Both ride a Match Cut null that slides Dist px over Cut frames; " +
+           "the cut lands at the end of the move and the incoming text keeps drifting the last " +
+           "few px until it ends (the 3-keyframe trick)." },
+    { label: "Scale Cut", kind: "scalecut",
+      tip: "Scale match cut \u2014 like Slide Cut, but the Match Cut null scales to Zoom % (around " +
+           "the comp center, so masks or moved anchors can't throw it off)." },
+    { label: "Underline", kind: "underline",
+      tip: "Draws a hand-drawn underline under each selected text layer over Frames: tapered, " +
+           "round caps, a little Turbulent Displace wobble, in the text's color. It's parented " +
+           "to the text, so it follows any cut." }
+];
+
+// ------------------------------------------------------------------
+// Drop / Rise: two range-selector animators, like the video
+// ------------------------------------------------------------------
+
+// Re-applying updates the same two animators and re-keys them at the
+// playhead instead of stacking more. Returns both Offsets.
+function rangeStyleOn(layer, style, dist, t0, t1) {
+    var mv = ensureAnimator(layer, "Apple Move", false).index;
+    var msi = ensureRangeSelector(layer, mv);
+    var pos = ensureAnimProp(layer, mv, "ADBE Text Position 3D");
+    setNow(pos, textAmount({ axis: 1 }, pos.value, style.dir * dist), t0);
+    var ms = selectorAt(layer, mv, msi);
+    // Ramp Up: characters past the range sit fully offset, so sweeping
+    // the Offset -100 -> 100 lands them one by one. The easing lives in
+    // Ease High / Low (F9 on these keys does nothing useful).
+    setAdvanced(ms, "ADBE Text Range Shape", "Shape", 2, t0);
+    setAdvanced(ms, "ADBE Text Range Type2", "Based On", style.by, t0);
+    setAdvanced(ms, "ADBE Text Levels Max Ease", "Ease High", style.easeHigh, t0);
+    setAdvanced(ms, "ADBE Text Levels Min Ease", "Ease Low", style.easeLow, t0);
+    linearSweep(ms.property("ADBE Text Percent Offset"), t0, -100, t1, 100);
+
+    // a separate Square fade over the same span, so the moving
+    // characters never pop on at their offset position
+    var fd = ensureAnimator(layer, "Apple Fade", false).index;
+    var fsi = ensureRangeSelector(layer, fd);
+    setNow(ensureAnimProp(layer, fd, "ADBE Text Opacity"), 0, t0);
+    var fs = selectorAt(layer, fd, fsi);
+    setAdvanced(fs, "ADBE Text Range Type2", "Based On", style.by, t0);
+    linearSweep(fs.property("ADBE Text Percent Offset"), t0, 0, t1, 100);
+
+    // re-fetched: adding the fade animator can invalidate older refs
+    return [selectorAt(layer, mv, msi).property("ADBE Text Percent Offset"),
+            selectorAt(layer, fd, fsi).property("ADBE Text Percent Offset")];
+}
+
+function applyRangeStyle(style, frames, dist) {
+    var comp = activeComp();
+    if (comp === null) { setStatus("Open a composition first."); return; }
+    var layers = selectedTextLayers(comp);
+    if (layers.length === 0) { setStatus("Select a text layer first."); return; }
+
+    var t0 = comp.time;
+    var t1 = t0 + frames * comp.frameDuration;
+    var offs = [], n = 0, revealed = false;
+    app.beginUndoGroup(SCRIPT_NAME + ": " + style.label);
+    try {
+        for (var i = 0; i < layers.length; i++) {
+            try {
+                offs = offs.concat(rangeStyleOn(layers[i], style, dist, t0, t1));
+                n++;
+            } catch (e) {}
+        }
+        if (offs.length > 0) revealed = showKeys(comp, offs, t0);
+    } finally {
+        app.endUndoGroup();
+    }
+
+    if (n === 0) { setStatus("Couldn't animate the selected text."); return; }
+    var msg = style.label + " \u2192 " + n + (n === 1 ? " layer" : " layers") + ", " +
+              frames + "f from " + playheadLabel(comp, t0);
+    if (!revealed) msg += " \u2014 press U to see the keys";
+    setStatus(msg);
+}
+
+// ------------------------------------------------------------------
+// Slide: the whole layer, on Position (or Y Position when separated)
+// ------------------------------------------------------------------
+
+function yPositionOf(layer) {
+    var tr = layer.property("ADBE Transform Group");
+    var pos = tr.property("ADBE Position");
+    if (pos.dimensionsSeparated) return { prop: tr.property("ADBE Position_1"), axis: -1 };
+    return { prop: pos, axis: 1 };
+}
+
+// v moved by d along axis (axis -1: v is the separated Y value)
+function shiftAxis(v, axis, d) {
+    if (axis < 0) return v + d;
+    var out = [];
+    for (var i = 0; i < v.length; i++) out.push(i === axis ? v[i] + d : v[i]);
+    return out;
+}
+
+function applySlide(frames, dist) {
+    var comp = activeComp();
+    if (comp === null) { setStatus("Open a composition first."); return; }
+    var layers = comp.selectedLayers;
+    if (layers.length === 0) { setStatus("Select a layer first."); return; }
+
+    var t0 = comp.time;
+    var t1 = t0 + frames * comp.frameDuration;
+    var keyed = [], revealed = false;
+    app.beginUndoGroup(SCRIPT_NAME + ": Slide");
+    try {
+        for (var i = 0; i < layers.length; i++) {
+            try {
+                var yp = yPositionOf(layers[i]);
+                var rest = yp.prop.valueAtTime(t0, true);
+                appleMove(yp.prop, t0, shiftAxis(rest, yp.axis, dist), t1, rest);
+                keyed.push(yp.prop);
+            } catch (e) {}
+        }
+        if (keyed.length > 0) revealed = showKeys(comp, keyed, t0);
+    } finally {
+        app.endUndoGroup();
+    }
+
+    if (keyed.length === 0) { setStatus("Couldn't slide the selected layers."); return; }
+    var msg = "Slide " + dist + "px \u2192 " + keyed.length + (keyed.length === 1 ? " layer" : " layers") +
+              ", " + frames + "f from " + playheadLabel(comp, t0);
+    if (!revealed) msg += " \u2014 press U to see the keys";
+    setStatus(msg);
+}
+
+// ------------------------------------------------------------------
+// Match cuts
+//
+// The video parents the incoming text to the outgoing one (or, for
+// the scale cut, to a null carrying the same keys) at the moment of
+// the cut. Here both layers ride one "Match Cut" null: it does the
+// move, the cut lands at the end of it, and the null keeps drifting
+// until the incoming text ends. Parenting happens at the playhead,
+// while the null is still at rest, so nothing jumps.
+// ------------------------------------------------------------------
+
+// Parents the top of layer's parent chain, so a layer already riding
+// an earlier cut's null keeps it (that null rides the new one)
+function parentTop(layer, nul) {
+    var top = layer;
+    while (top.parent !== null) top = top.parent;
+    if (top.index !== nul.index) top.parent = nul;
+}
+
+function scaleValue(v, f) {
+    var out = [];
+    for (var i = 0; i < v.length; i++) out.push(v[i] * f);
+    return out;
+}
+
+function matchCut(mode, frames, dist, zoom) {
+    var comp = activeComp();
+    if (comp === null) { setStatus("Open a composition first."); return; }
+    var picked = comp.selectedLayers;
+    if (picked.length !== 2) {
+        setStatus("Select 2 layers: the outgoing text and the incoming one.");
+        return;
+    }
+    // outgoing = the one that starts first; on a tie, the lower one
+    // (new layers land on top)
+    var a = picked[0], b = picked[1];
+    if (b.inPoint < a.inPoint || (b.inPoint === a.inPoint && b.index > a.index)) {
+        a = picked[1];
+        b = picked[0];
+    }
+    var fdur = comp.frameDuration;
+    var t0 = comp.time;
+    var t1 = t0 + frames * fdur;
+    if (t1 <= a.inPoint || t1 >= b.outPoint) {
+        setStatus("Put the playhead where \"" + a.name + "\" starts its exit move.");
+        return;
+    }
+    var tEnd = Math.min(b.outPoint, comp.duration) - fdur;
+    var label = (mode === "scale") ? "Scale Cut" : "Slide Cut";
+    var keyed = null, revealed = false;
+
+    app.beginUndoGroup(SCRIPT_NAME + ": " + label);
+    try {
+        var nul = comp.layers.addNull(comp.duration);
+        nul.name = "Match Cut";
+        nul.moveAfter((a.index > b.index) ? a : b);
+        try { nul.inPoint = t0; } catch (eIn) {}
+
+        var tr = nul.property("ADBE Transform Group");
+        var prop = tr.property((mode === "scale") ? "ADBE Scale" : "ADBE Position");
+        var v0 = prop.value;
+        var v1 = (mode === "scale") ? scaleValue(v0, zoom / 100) : shiftAxis(v0, 1, dist);
+        driftMove(prop, t0, v0, t1, v1, tEnd);
+
+        parentTop(a, nul);
+        parentTop(b, nul);
+        a.outPoint = t1;
+        try { b.inPoint = t1; } catch (eB) {}
+
+        keyed = tr.property((mode === "scale") ? "ADBE Scale" : "ADBE Position");
+        revealed = showKeys(comp, [keyed], t0);
+    } catch (e) {
+        keyed = null;
+    } finally {
+        app.endUndoGroup();
+    }
+
+    if (keyed === null) { setStatus("Couldn't build the match cut (Cmd/Ctrl+Z to undo any partial result)."); return; }
+    var msg = label + " \u2192 \"" + a.name + "\" out, \"" + b.name + "\" in at " + playheadLabel(comp, t1);
+    if (!revealed) msg += " \u2014 press U on Match Cut to see the keys";
+    setStatus(msg);
+}
+
+// ------------------------------------------------------------------
+// Underline
+// ------------------------------------------------------------------
+
+function zeroed(v) {
+    if (!(v instanceof Array)) return 0;
+    var out = [];
+    for (var i = 0; i < v.length; i++) out.push(0);
+    return out;
+}
+
+function underlineFor(comp, text, t0, t1) {
+    // measure the text at rest: late in its life, after any reveal
+    var r = text.sourceRectAtTime(Math.max(t0, text.outPoint - comp.frameDuration), false);
+    var color = [0, 0, 0];
+    try {
+        var doc = text.property("ADBE Text Properties").property("ADBE Text Document").value;
+        if (doc.applyFill) color = doc.fillColor;
+    } catch (eC) {}
+    var w = r.width;
+    var sw = Math.max(3, Math.round(r.height * 0.08));
+    var y = r.top + r.height + sw * 1.5;
+
+    var sh = comp.layers.addShape();
+    sh.name = text.name + " Underline";
+    sh.moveBefore(text);
+
+    // shape-layer references go stale after every add, so each step
+    // re-fetches from the layer
+    function contents() {
+        return sh.property("ADBE Root Vectors Group").property(1).property("ADBE Vectors Group");
+    }
+    sh.property("ADBE Root Vectors Group").addProperty("ADBE Vector Group").name = "Underline";
+    contents().addProperty("ADBE Vector Shape - Group");
+    contents().addProperty("ADBE Vector Graphic - Stroke");
+    contents().addProperty("ADBE Vector Filter - Trim");
+
+    // a gentle hand-drawn curve under the text
+    var s = new Shape();
+    s.vertices = [[r.left, y], [r.left + w, y - w * 0.015]];
+    s.outTangents = [[w * 0.35, w * 0.03], [0, 0]];
+    s.inTangents = [[0, 0], [-w * 0.35, w * 0.02]];
+    s.closed = false;
+    contents().property("ADBE Vector Shape - Group").property("ADBE Vector Shape").setValue(s);
+
+    var st = contents().property("ADBE Vector Graphic - Stroke");
+    st.property("ADBE Vector Stroke Color").setValue(color);
+    st.property("ADBE Vector Stroke Width").setValue(sw);
+    try { st.property("ADBE Vector Stroke Line Cap").setValue(2); } catch (eCap) {} // Round
+    // pen-like taper (AE 2020+)
+    try {
+        var tp = st.property("ADBE Vector Stroke Taper");
+        tp.property("ADBE Vector Taper Start Length").setValue(12);
+        tp.property("ADBE Vector Taper End Length").setValue(25);
+        tp.property("ADBE Vector Taper Start Ease").setValue(60);
+        tp.property("ADBE Vector Taper End Ease").setValue(60);
+    } catch (eTp) {}
+
+    // the wobble
+    try {
+        var fx = sh.property("ADBE Effect Parade").addProperty("ADBE Turbulent Displace");
+        fx.property("Amount").setValue(10);
+        fx.property("Size").setValue(40);
+    } catch (eFx) {}
+
+    // ride along with the text: shape space = the text layer's space
+    var tr = sh.property("ADBE Transform Group");
+    tr.property("ADBE Anchor Point").setValue(zeroed(tr.property("ADBE Anchor Point").value));
+    tr.property("ADBE Position").setValue(zeroed(tr.property("ADBE Position").value));
+    sh.setParentWithJump(text);
+    try {
+        sh.inPoint = t0;
+        sh.outPoint = text.outPoint;
+    } catch (eT) {}
+
+    var end = contents().property("ADBE Vector Filter - Trim").property("ADBE Vector Trim End");
+    appleMove(end, t0, 0, t1, 100);
+    return end;
+}
+
+function addUnderline(frames) {
+    var comp = activeComp();
+    if (comp === null) { setStatus("Open a composition first."); return; }
+    var layers = selectedTextLayers(comp);
+    if (layers.length === 0) { setStatus("Select a text layer first."); return; }
+
+    var t0 = comp.time;
+    var t1 = t0 + frames * comp.frameDuration;
+    var ends = [], revealed = false;
+    app.beginUndoGroup(SCRIPT_NAME + ": Underline");
+    try {
+        for (var i = 0; i < layers.length; i++) {
+            try { ends.push(underlineFor(comp, layers[i], t0, t1)); } catch (e) {}
+        }
+        if (ends.length > 0) revealed = showKeys(comp, ends, t0);
+    } finally {
+        app.endUndoGroup();
+    }
+
+    if (ends.length === 0) { setStatus("Couldn't add an underline to the selected text."); return; }
+    var msg = "Underline \u2192 " + ends.length + (ends.length === 1 ? " layer" : " layers") +
+              ", draws on over " + frames + "f";
+    if (!revealed) msg += " \u2014 press U to see the keys";
+    setStatus(msg);
+}
+
+// ------------------------------------------------------------------
+// Tab builder
+// ------------------------------------------------------------------
+
+function buildAppleTab(tp) {
+    var tab = makeTab(tp, "Apple");
+    var frames, dist, cutFrames, zoom;
+
+    styleGrid(tab, APPLE_STYLES, function (s) {
+        if (s.kind === "slide") applySlide(frames.value(), dist.value());
+        else applyRangeStyle(s, frames.value(), dist.value());
+    });
+
+    var r1 = row(tab);
+    r1.alignChildren = ["left", "center"];
+    frames = numField(r1, "Frames", 40, 20, 1, 600,
+        "How long a reveal, slide, or underline takes, in frames (from the playhead)");
+    dist = numField(r1, "Dist", 30, 70, -2000, 2000,
+        "How far the text travels, in px (the video uses 70). Negative flips the direction.");
+
+    styleGrid(tab, APPLE_CUTS, function (s) {
+        if (s.kind === "underline") addUnderline(frames.value());
+        else matchCut((s.kind === "scalecut") ? "scale" : "slide", cutFrames.value(), dist.value(), zoom.value());
+    });
+
+    var r2 = row(tab);
+    r2.alignChildren = ["left", "center"];
+    cutFrames = numField(r2, "Cut", 40, 10, 1, 600,
+        "Length of the match-cut move, in frames (the video uses 10); the cut lands at its end");
+    zoom = numField(r2, "Zoom", 30, 130, 1, 1000,
+        "How far Scale Cut zooms, in % (the video uses 130)");
+
+    hint(tab, "Cuts: select outgoing + incoming layers.");
+
+    return tab;
+}

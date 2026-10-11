@@ -1,0 +1,372 @@
+/**********************************************************************
+ TextBuddy UI  —  purple theme (matches the other buddies), custom-
+ drawn buttons and style tiles, and the widget factories every tab
+ builds from.
+
+ Spliced into TextBuddy.jsx's closure via //@include — not a
+ standalone script.
+**********************************************************************/
+
+// ------------------------------------------------------------------
+// Theme
+// ------------------------------------------------------------------
+
+// Tiles and buttons are custom-drawn (ScriptUI can't recolor native
+// buttons), the panel background is painted, and text is tinted
+// lavender where the platform allows it.
+var COL = {
+    panelBg:     [0.11, 0.09, 0.16, 1],
+    tileBg:      [0.16, 0.13, 0.24, 1],
+    tileBgHover: [0.22, 0.18, 0.33, 1],
+    tileBgDown:  [0.28, 0.23, 0.42, 1],
+    border:      [0.36, 0.30, 0.53, 1],
+    borderHover: [0.64, 0.54, 0.92, 1],
+    curve:       [0.73, 0.58, 1.00, 1],
+    dot:         [0.99, 0.79, 0.42, 1],
+    label:       [0.86, 0.83, 0.95, 1],
+    btnBg:       [0.24, 0.19, 0.37, 1],
+    btnBgHover:  [0.31, 0.25, 0.47, 1],
+    btnBgDown:   [0.38, 0.31, 0.57, 1],
+    btnText:     [0.91, 0.88, 1.00, 1],
+    text:        [0.86, 0.83, 0.95, 1],
+    muted:       [0.63, 0.58, 0.77, 1]
+};
+
+// Both helpers are best-effort: some platforms ignore background /
+// foreground overrides on native controls, so failures must never
+// break the panel.
+function paintBG(ctrl, color) {
+    try {
+        var g = ctrl.graphics;
+        g.backgroundColor = g.newBrush(g.BrushType.SOLID_COLOR, [color[0], color[1], color[2]]);
+    } catch (e) {}
+}
+
+function tintText(ctrl, color) {
+    try {
+        var g = ctrl.graphics;
+        g.foregroundColor = g.newPen(g.PenType.SOLID_COLOR, [color[0], color[1], color[2]], 1);
+    } catch (e) {}
+}
+
+// AE doesn't repaint custom-drawn controls on mouse enter/leave, so
+// force a redraw to make the hover highlight visible
+function hoverRepaint(ctrl) {
+    function repaint(ev) {
+        try { ev.target.notify("onDraw"); } catch (e) {}
+    }
+    ctrl.addEventListener("mouseover", repaint);
+    ctrl.addEventListener("mouseout", repaint);
+}
+
+var FONTS = { tile: null, btn: null };
+
+function font(which) {
+    if (FONTS[which] === null) {
+        try {
+            FONTS[which] = ScriptUI.newFont("dialog", ScriptUI.FontStyle.REGULAR, (which === "tile") ? 9 : 11);
+        } catch (e) {}
+    }
+    return FONTS[which];
+}
+
+function mixCol(a, b, f) {
+    return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, 1];
+}
+
+function fillRect(g, x, y, w, h, color) {
+    g.newPath();
+    g.rectPath(x, y, w, h);
+    g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, color));
+}
+
+function strokeRect(g, x, y, w, h, color) {
+    g.newPath();
+    g.rectPath(x, y, w, h);
+    g.strokePath(g.newPen(g.PenType.SOLID_COLOR, color, 1));
+}
+
+// ------------------------------------------------------------------
+// Drawing
+// ------------------------------------------------------------------
+
+// AE's keyframe diamond, in the tile-dot gold (filled like the
+// timeline's when it's "on")
+function drawKeyDiamond(g, cx, cy, r, filled) {
+    g.newPath();
+    g.moveTo(cx, cy - r);
+    g.lineTo(cx + r, cy);
+    g.lineTo(cx, cy + r);
+    g.lineTo(cx - r, cy);
+    g.closePath();
+    if (filled) g.fillPath(g.newBrush(g.BrushType.SOLID_COLOR, COL.dot));
+    else g.strokePath(g.newPen(g.PenType.SOLID_COLOR, COL.dot, 1.5));
+}
+
+// The TextBuddy mark: a block T over a gold hand-drawn underline
+function drawTextMark(g, x, y, s) {
+    fillRect(g, x + s * 0.22, y + s * 0.16, s * 0.56, s * 0.14, COL.curve);
+    fillRect(g, x + s * 0.43, y + s * 0.16, s * 0.14, s * 0.52, COL.curve);
+    g.newPath();
+    for (var i = 0; i <= 8; i++) {
+        var u = i / 8;
+        var px = x + s * (0.18 + 0.64 * u);
+        var py = y + s * (0.84 - 0.06 * Math.sin(u * Math.PI));
+        if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.strokePath(g.newPen(g.PenType.SOLID_COLOR, COL.dot, Math.max(1.5, s * 0.08)));
+}
+
+// Flat purple button: an iconbutton drawn by hand, with hover and
+// pressed states. icon "key" puts a keyframe diamond before the label.
+function renderButton(ctrl, label, icon) {
+    ctrl.onDraw = function (drawState) {
+        try {
+            if (!this.size) return;
+            var g = this.graphics;
+            var w = this.size.width;
+            var h = this.size.height;
+            var over = false, down = false;
+            if (drawState) {
+                over = drawState.mouseOver === true;
+                down = drawState.leftButtonPressed === true;
+            }
+            fillRect(g, 0, 0, w, h, down ? COL.btnBgDown : (over ? COL.btnBgHover : COL.btnBg));
+            strokeRect(g, 0, 0, w - 1, h - 1, over ? COL.borderHover : COL.border);
+            var f = font("btn");
+            var tw = label.length * 5.5;
+            var th = 12;
+            try {
+                var m = g.measureString(label, f);
+                tw = m.width;
+                th = m.height;
+            } catch (eM) {}
+            var iw = (icon === "key") ? 14 : 0; // 9px diamond + gap
+            var tx = (w - tw - iw) / 2;
+            if (tx < 2) tx = 2;
+            var ty = (h - th) / 2;
+            if (ty < 0) ty = 0;
+            if (iw > 0) drawKeyDiamond(g, tx + 4.5, h / 2, 4.5, over);
+            g.drawString(label, g.newPen(g.PenType.SOLID_COLOR, COL.btnText, 1), tx + iw, ty, f);
+        } catch (eDraw) {}
+    };
+}
+
+// A little picture of each Apple look inside its tile. Blocks stand
+// in for characters / words; p is how far each one has arrived.
+function drawStyleArt(g, kind, px, py, pw, ph) {
+    var i, x, bw;
+    var bh = ph * 0.28;
+    var rest = py + ph * 0.36;
+    var travel = ph * 0.34;
+
+    function block(bx, by, w, p) {
+        fillRect(g, bx, by, w, bh, mixCol(COL.tileBg, COL.curve, 0.15 + 0.85 * p));
+    }
+
+    if (kind === "drop" || kind === "rise") {
+        var drop = (kind === "drop");
+        var ps = drop ? [1, 1, 0.8, 0.5, 0.25, 0.05] : [1, 0.5, 0.1];
+        var slot = pw / ps.length;
+        bw = slot - (drop ? 2 : 3);
+        for (i = 0; i < ps.length; i++) {
+            var off = (1 - ps[i]) * travel * (drop ? -1 : 1);
+            block(px + i * slot, rest + off, bw, ps[i]);
+        }
+    } else if (kind === "slide") {
+        bw = pw * 0.8;
+        x = px + (pw - bw) / 2;
+        strokeRect(g, x, rest + travel, bw, bh, COL.border);
+        block(x, rest, bw, 1);
+    } else if (kind === "slidecut") {
+        bw = pw * 0.4;
+        block(px, rest - travel * 0.4, bw, 0.25);
+        block(px + pw - bw, rest + travel * 0.6, bw, 1);
+        g.newPath();
+        g.moveTo(px + pw / 2, py);
+        g.lineTo(px + pw / 2, py + ph);
+        g.strokePath(g.newPen(g.PenType.SOLID_COLOR, COL.dot, 1));
+    } else if (kind === "scalecut") {
+        block(px + pw * 0.34, rest + bh * 0.25, pw * 0.32, 0.25);
+        strokeRect(g, px + pw * 0.12, rest - bh * 0.35, pw * 0.76, bh * 1.7, COL.curve);
+    } else if (kind === "underline") {
+        bw = pw * 0.8;
+        x = px + (pw - bw) / 2;
+        block(x, rest - bh * 0.4, bw, 1);
+        g.newPath();
+        for (i = 0; i <= 10; i++) {
+            var u = i / 10;
+            var ux = x + bw * u;
+            var uy = rest + bh * 1.2 - Math.sin(u * Math.PI) * 2 - u * 2;
+            if (i === 0) g.moveTo(ux, uy); else g.lineTo(ux, uy);
+        }
+        g.strokePath(g.newPen(g.PenType.SOLID_COLOR, COL.dot, 2));
+    }
+}
+
+function renderStyleTile(ctrl, style) {
+    ctrl.onDraw = function (drawState) {
+        try {
+            if (!this.size) return;
+            var g = this.graphics;
+            var w = this.size.width;
+            var h = this.size.height;
+            var labelH = 12;
+            var over = false, down = false;
+            if (drawState) {
+                over = drawState.mouseOver === true;
+                down = drawState.leftButtonPressed === true;
+            }
+            fillRect(g, 0, 0, w, h, down ? COL.tileBgDown : (over ? COL.tileBgHover : COL.tileBg));
+            strokeRect(g, 0, 0, w - 1, h - 1, over ? COL.borderHover : COL.border);
+            drawStyleArt(g, style.kind, 7, 5, w - 14, h - labelH - 10);
+            var f = font("tile");
+            var tw = style.label.length * 4.5;
+            try { tw = g.measureString(style.label, f).width; } catch (eM) {}
+            var tx = (w - tw) / 2;
+            if (tx < 2) tx = 2;
+            g.drawString(style.label, g.newPen(g.PenType.SOLID_COLOR, COL.label, 1), tx, h - labelH - 1, f);
+        } catch (eDraw) {}
+    };
+}
+
+// ------------------------------------------------------------------
+// Widget factories
+// ------------------------------------------------------------------
+
+function clampNum(text, def, min, max) {
+    var v = parseFloat(text);
+    if (isNaN(v)) v = def;
+    if (v < min) v = min;
+    if (v > max) v = max;
+    return v;
+}
+
+// Panel header: the T-and-underline mark + title
+function addHeader(pal) {
+    var hdr = pal.add("group");
+    hdr.orientation = "row";
+    hdr.alignChildren = ["left", "center"];
+    hdr.spacing = 6;
+    var hIcon = hdr.add("iconbutton", undefined, undefined, { style: "toolbutton" });
+    hIcon.preferredSize = [20, 20];
+    hIcon.onDraw = function () {
+        try {
+            if (!this.size) return;
+            var g = this.graphics;
+            var w = this.size.width;
+            fillRect(g, 0, 0, w, w, COL.tileBg);
+            strokeRect(g, 0, 0, w - 1, w - 1, COL.border);
+            drawTextMark(g, 0, 0, w);
+        } catch (e) {}
+    };
+    var hTitle = hdr.add("statictext", undefined, SCRIPT_NAME);
+    try { hTitle.graphics.font = ScriptUI.newFont(hTitle.graphics.font.name, ScriptUI.FontStyle.BOLD, 12); } catch (eF) {}
+    tintText(hTitle, COL.text);
+    return hdr;
+}
+
+function makeTab(tp, title) {
+    var t = tp.add("tab", undefined, title);
+    t.orientation = "column";
+    t.alignChildren = ["fill", "top"];
+    t.spacing = 5;
+    t.margins = 8;
+    paintBG(t, COL.panelBg);
+    return t;
+}
+
+function row(parent) {
+    var g = parent.add("group");
+    g.orientation = "row";
+    g.alignChildren = ["fill", "center"];
+    g.alignment = ["fill", "top"];
+    g.spacing = 4;
+    return g;
+}
+
+function label(parent, txt, width) {
+    var st = parent.add("statictext", undefined, txt);
+    if (width) st.preferredSize.width = width;
+    tintText(st, COL.text);
+    return st;
+}
+
+function hint(parent, txt) {
+    var st = parent.add("statictext", undefined, txt);
+    try { st.graphics.font = ScriptUI.newFont(st.graphics.font.name, ScriptUI.FontStyle.ITALIC, 9); } catch (e) {}
+    tintText(st, COL.muted);
+    return st;
+}
+
+function btn(parent, txt, tip, fn, icon) {
+    var b = parent.add("iconbutton", undefined, undefined, { style: "toolbutton" });
+    b.helpTip = tip;
+    b.alignment = ["fill", "center"];
+    b.preferredSize = [60, 24];
+    renderButton(b, txt, icon);
+    hoverRepaint(b);
+    b.onClick = fn;
+    return b;
+}
+
+// Label + number box. value() re-clamps and rewrites the box.
+function numField(parent, txt, labelW, def, min, max, tip) {
+    label(parent, txt, labelW);
+    var et = parent.add("edittext", undefined, String(def));
+    et.characters = 4;
+    et.helpTip = tip;
+    tintText(et, COL.text);
+    function value() {
+        var v = clampNum(et.text, def, min, max);
+        et.text = String(v);
+        return v;
+    }
+    et.onChange = value;
+    return { value: value, box: et };
+}
+
+function sliderRow(parent, labelTxt, def, min, max, labelW) {
+    var g = row(parent);
+    g.alignChildren = ["left", "center"];
+    label(g, labelTxt, labelW);
+    var sl = g.add("slider", undefined, def, min, max);
+    sl.alignment = ["fill", "center"];
+    var et = g.add("edittext", undefined, String(def));
+    et.characters = 4;
+    tintText(et, COL.text);
+    sl.onChanging = function () {
+        et.text = String(Math.round(sl.value));
+    };
+    et.onChange = function () {
+        var v = clampNum(et.text, def, min, max);
+        et.text = String(Math.round(v));
+        sl.value = v;
+    };
+    return {
+        value: function () {
+            return Math.max(min, Math.min(max, Math.round(sl.value)));
+        }
+    };
+}
+
+// Style tiles, three per row; onApply(style) on click
+function styleGrid(parent, styles, onApply) {
+    var tileRow = null;
+    for (var i = 0; i < styles.length; i++) {
+        if (i % 3 === 0) {
+            tileRow = parent.add("group");
+            tileRow.orientation = "row";
+            tileRow.spacing = 4;
+            tileRow.alignment = ["center", "top"];
+        }
+        var c = tileRow.add("iconbutton", undefined, undefined, { style: "toolbutton" });
+        c.preferredSize = [58, 48];
+        c.helpTip = styles[i].tip;
+        renderStyleTile(c, styles[i]);
+        hoverRepaint(c);
+        c.onClick = (function (s) {
+            return function () { onApply(s); };
+        })(styles[i]);
+    }
+}

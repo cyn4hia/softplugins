@@ -1,0 +1,215 @@
+/**********************************************************************
+ TextBuddy — Reveal tab: build a text animator (what to animate,
+ Based On, Smoothness) and key its Offset at 0% / 100% for
+ word-by-word reveals.
+
+ Spliced into TextBuddy.jsx's closure via //@include — not a
+ standalone script.
+**********************************************************************/
+
+// ------------------------------------------------------------------
+// Animator presets. The amount is the state the selected units sit
+// in: Offset 0% holds every word there, Offset 100% releases them
+// all back to normal.
+// ------------------------------------------------------------------
+
+var REVEAL_ANIM_NAME = "TextBuddy";
+
+// axis: see textAmount
+var REVEAL_PROPS = [
+    { label: "Opacity",    match: "ADBE Text Opacity",     def: 0,  min: 0,      max: 100,   unit: "%" },
+    { label: "Position Y", match: "ADBE Text Position 3D", def: 50, min: -10000, max: 10000, unit: "px", axis: 1 },
+    { label: "Scale",      match: "ADBE Text Scale 3D",    def: 0,  min: -10000, max: 10000, unit: "%" },
+    { label: "Rotation",   match: "ADBE Text Rotation",    def: 45, min: -3600,  max: 3600,  unit: "\u00B0" },
+    { label: "Blur",       match: "ADBE Text Blur",        def: 20, min: 0,      max: 1000,  unit: "px" }
+];
+
+// Range Selector > Advanced > Based On, in AE's menu order (1-based)
+var BASED_ON = ["Characters", "Characters Excl. Spaces", "Words", "Lines"];
+
+// ------------------------------------------------------------------
+// Add / update the animator
+// ------------------------------------------------------------------
+
+// Reuses the layer's newest TextBuddy animator unless fresh, so
+// clicking again with a different property stacks it on the same
+// range selector (Opacity + Position Y = fade up) instead of piling
+// up animators.
+function setupRevealAnimator(layer, spec, amount, basedOn, smooth, fresh, t) {
+    var a = ensureAnimator(layer, REVEAL_ANIM_NAME, fresh);
+    var si = ensureRangeSelector(layer, a.index);
+    var vp = ensureAnimProp(layer, a.index, spec.match);
+    setNow(vp, textAmount(spec, vp.value, amount), t);
+
+    var sel = selectorAt(layer, a.index, si);
+    setAdvanced(sel, "ADBE Text Range Type2", "Based On", basedOn, t);
+    // Smoothness only exists for the Square shape (AE's default); a
+    // selector switched to another shape just keeps it hidden
+    setAdvanced(sel, "ADBE Text Selector Smoothness", "Smoothness", smooth, t);
+
+    return { isNew: a.isNew, offset: sel.property("ADBE Text Percent Offset"), value: vp };
+}
+
+function addRevealAnimator(spec, amount, basedOn, smooth, fresh) {
+    var comp = activeComp();
+    if (comp === null) { setStatus("Open a composition first."); return; }
+    var layers = selectedTextLayers(comp);
+    if (layers.length === 0) { setStatus("Select a text layer first."); return; }
+
+    var updated = 0;
+    var offs = [], show = [];
+    var i;
+    app.beginUndoGroup(SCRIPT_NAME + ": Text Animator");
+    try {
+        for (i = 0; i < layers.length; i++) {
+            try {
+                var r = setupRevealAnimator(layers[i], spec, amount, basedOn, smooth, fresh, comp.time);
+                if (!r.isNew) updated++;
+                offs.push(r.offset);
+                show.push(r.offset);
+                show.push(r.value);
+            } catch (e) {}
+        }
+        if (offs.length > 0) {
+            // Offset selected = the next Offset click keys exactly these
+            selectOnly(comp, offs, false);
+            revealProps(show, comp.time);
+        }
+    } finally {
+        app.endUndoGroup();
+    }
+
+    if (offs.length === 0) { setStatus("Couldn't add a text animator to the selected layers."); return; }
+    var msg = spec.label + " " + amount + spec.unit + ", " + BASED_ON[basedOn - 1] +
+              ", smooth " + smooth + "% \u2192 " + offs.length + (offs.length === 1 ? " layer" : " layers");
+    if (updated > 0) msg += " (" + updated + " updated)";
+    setStatus(msg);
+}
+
+// ------------------------------------------------------------------
+// Offset keys
+// ------------------------------------------------------------------
+
+function keyRevealOffset(pct) {
+    var comp = activeComp();
+    if (comp === null) { setStatus("Open a composition first."); return; }
+    var sels = textSelectorTargets(comp);
+    if (sels.length === 0) {
+        setStatus("Select a text layer with an animator (Add Animator first).");
+        return;
+    }
+
+    var t = comp.time;
+    var label = "Offset " + pct + "%";
+    var offs = [];
+    var skipped = 0, revealed = false;
+    app.beginUndoGroup(SCRIPT_NAME + ": " + label);
+    try {
+        for (var i = 0; i < sels.length; i++) {
+            try {
+                // Index units hide the percent Offset; keying it would do nothing
+                if (sels[i].property("ADBE Text Range Advanced").property("ADBE Text Range Units").value === 2) {
+                    skipped++;
+                    continue;
+                }
+                var off = sels[i].property("ADBE Text Percent Offset");
+                off.setValueAtTime(t, pct);
+                offs.push(off);
+            } catch (e) {}
+        }
+        if (offs.length > 0) revealed = showKeys(comp, offs, t);
+    } finally {
+        app.endUndoGroup();
+    }
+
+    if (offs.length === 0) {
+        setStatus(skipped > 0 ? "Those selectors use Index units \u2014 switch Units to Percentage." :
+                                "Couldn't key Offset on the selected text.");
+        return;
+    }
+    var msg = label + " \u2192 " + offs.length + (offs.length === 1 ? " selector" : " selectors") +
+              " at " + playheadLabel(comp, t);
+    if (skipped > 0) msg += ", " + skipped + " skipped (Index units)";
+    if (!revealed) msg += " \u2014 press U to see the keys";
+    setStatus(msg);
+}
+
+// ------------------------------------------------------------------
+// Tab builder
+// ------------------------------------------------------------------
+
+function buildRevealTab(tp) {
+    var tab = makeTab(tp, "Reveal");
+    var i;
+
+    // what to animate + the amount the hidden words sit at
+    var rp = row(tab);
+    rp.alignChildren = ["left", "center"];
+    var names = [];
+    for (i = 0; i < REVEAL_PROPS.length; i++) names.push(REVEAL_PROPS[i].label);
+    var ddProp = rp.add("dropdownlist", undefined, names);
+    ddProp.selection = 0;
+    ddProp.alignment = ["fill", "center"];
+    ddProp.helpTip = "What the animator changes on each word before it's revealed";
+    var etAmt = rp.add("edittext", undefined, String(REVEAL_PROPS[0].def));
+    etAmt.characters = 4;
+    etAmt.helpTip = "Where each word starts (at Offset 0%) \u2014 it animates back to normal by Offset 100%";
+    tintText(etAmt, COL.text);
+    var stUnit = rp.add("statictext", undefined, REVEAL_PROPS[0].unit);
+    stUnit.characters = 2;
+    tintText(stUnit, COL.text);
+
+    function spec() {
+        var s = ddProp.selection;
+        return REVEAL_PROPS[(s === null) ? 0 : s.index];
+    }
+    function amount() {
+        var s = spec();
+        var v = clampNum(etAmt.text, s.def, s.min, s.max);
+        etAmt.text = String(v);
+        return v;
+    }
+    ddProp.onChange = function () {
+        etAmt.text = String(spec().def);
+        stUnit.text = spec().unit;
+    };
+    etAmt.onChange = amount;
+
+    var rb = row(tab);
+    rb.alignChildren = ["left", "center"];
+    label(rb, "By", 40);
+    var ddBy = rb.add("dropdownlist", undefined, BASED_ON);
+    ddBy.selection = 2; // Words
+    ddBy.alignment = ["fill", "center"];
+    ddBy.helpTip = "Range Selector \u2192 Advanced \u2192 Based On: the unit that animates one at a time";
+
+    var smCtl = sliderRow(tab, "Smooth", 0, 0, 100, 40);
+
+    var ra = row(tab);
+    btn(ra, "Add Animator",
+        "Adds a text animator with these settings to the selected text layers. Click again to " +
+        "update it, or pick another property to stack it on the same animator (Opacity + " +
+        "Position Y = fade up). Alt-click: add a separate animator instead.",
+        function () {
+            var alt = false;
+            try { alt = ScriptUI.environment.keyboardState.altKey === true; } catch (e) {}
+            var by = (ddBy.selection === null) ? 3 : ddBy.selection.index + 1;
+            addRevealAnimator(spec(), amount(), by, smCtl.value(), alt);
+        });
+
+    var ro = row(tab);
+    btn(ro, "Offset 0%",
+        "Keys the Range Selector Offset at 0% on the playhead \u2014 where the reveal starts " +
+        "(every word held at the amount above). The Offset keys end up selected and twirled " +
+        "open, ready for a GraphBuddy ease.",
+        function () { keyRevealOffset(0); }, "key");
+    btn(ro, "Offset 100%",
+        "Keys the Range Selector Offset at 100% on the playhead \u2014 where the reveal ends " +
+        "(every word back to normal). The Offset keys end up selected and twirled open, ready " +
+        "for a GraphBuddy ease.",
+        function () { keyRevealOffset(100); }, "key");
+
+    hint(tab, "Key 0% at the start, 100% at the end.");
+
+    return tab;
+}
