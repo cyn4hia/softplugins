@@ -9,6 +9,8 @@ A small dockable launcher that lists every Buddy plugin installed on your machin
 
 ## Install
 
+**Quickest (macOS):** run `./install.sh` from the repo folder. It installs every buddy at once; see the [main README](../README.md#install). To install by hand:
+
 1. Copy `BuddyHub.jsx` **and** the `BuddyHub_lib` folder, side by side, into the ScriptUI Panels folder — the **same folder as the buddies**:
    - **macOS:** `/Applications/Adobe After Effects 2026/Scripts/ScriptUI Panels/`
    - **Windows:** `C:\Program Files\Adobe\Adobe After Effects 2026\Support Files\Scripts\ScriptUI Panels\`

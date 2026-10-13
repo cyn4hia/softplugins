@@ -10,6 +10,8 @@ It refreshes every ~15 s as you switch projects, shows session elapsed time, and
 
 ## Install
 
+**Quickest (macOS):** run `./install.sh` from the repo folder. It installs every buddy at once; see the [main README](../README.md#install). To install by hand:
+
 1. Copy `DiscordBuddy.jsx` **and** the `DiscordBuddy_lib` folder, side by side, into the ScriptUI Panels folder:
    - **macOS:** `/Applications/Adobe After Effects 2026/Scripts/ScriptUI Panels/`
    - **Windows:** `C:\Program Files\Adobe\Adobe After Effects 2026\Support Files\Scripts\ScriptUI Panels\`

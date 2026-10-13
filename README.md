@@ -2,6 +2,23 @@
 
 my own ae plugins for free
 
+## install
+
+On macOS, install every buddy at once from the repo folder:
+
+```bash
+./install.sh
+```
+
+It copies each `<Name>.jsx` and its `<Name>_lib` folder into every After Effects in `/Applications`. That folder belongs to the system, so it asks for your Mac password once. Restart After Effects, then open **Window → BuddyHub.jsx**.
+
+- Re-run it after pulling updates. It replaces the old copies, including the lib folders, so no stale modules are left behind.
+- `./install.sh TextBuddy GraphBuddy` installs just the ones you name.
+- `./install.sh --uninstall` removes them again.
+- `./install.sh --dest <folder>` uses another ScriptUI Panels folder.
+
+On Windows, or to install by hand, follow the Install steps in each buddy's README.
+
 ## plugins
 
 - **[BuddyHub](BuddyHub/)** — the home page: a dockable launcher listing every installed Buddy with its icon; click to open or close its panel. New buddies appear automatically. See [BuddyHub/README.md](BuddyHub/README.md).
