@@ -87,21 +87,24 @@ function applyRangeStyle(style, frames, dist) {
 
     var t0 = comp.time;
     var t1 = t0 + frames * comp.frameDuration;
-    var offs = [], n = 0, revealed = false;
+    var offs = [], n = 0, revealed = false, lastErr = null;
     app.beginUndoGroup(SCRIPT_NAME + ": " + style.label);
     try {
         for (var i = 0; i < layers.length; i++) {
             try {
                 offs = offs.concat(rangeStyleOn(layers[i], style, dist, t0, t1));
                 n++;
-            } catch (e) {}
+            } catch (e) { lastErr = e; }
         }
         if (offs.length > 0) revealed = showKeys(comp, offs, t0);
     } finally {
         app.endUndoGroup();
     }
 
-    if (n === 0) { setStatus("Couldn't animate the selected text."); return; }
+    if (n === 0) {
+        setStatus("Couldn't animate the selected text" + (lastErr === null ? "." : ": " + errText(lastErr)));
+        return;
+    }
     var msg = style.label + " \u2192 " + n + (n === 1 ? " layer" : " layers") + ", " +
               frames + "f from " + playheadLabel(comp, t0);
     if (!revealed) msg += " \u2014 press U to see the keys";

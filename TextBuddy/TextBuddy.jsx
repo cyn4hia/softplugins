@@ -1,8 +1,9 @@
 /**********************************************************************
  TextBuddy.jsx  \u2014  one-click text animation for After Effects
- v1.0   Reveal tab: build a text animator (property, Based On,
-        Smoothness) and key its Offset at 0% / 100%, with the keys
-        selected and twirled open in the timeline. Apple tab: the
+ v1.1   Reveal tab: one click builds a complete text animator
+        (property, Based On, Smoothness) with its Offset keyed
+        0% -> 100% over Frames, keys selected and twirled open in
+        the timeline; the Offset buttons re-key it. Apple tab: the
         "animate text like Apple" looks \u2014 Drop, Rise, Slide reveals,
         Slide / Scale match cuts with the 3-keyframe drift, and a
         hand-drawn Underline. (Reveal moved here from GraphBuddy.)

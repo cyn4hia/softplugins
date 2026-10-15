@@ -30,6 +30,14 @@ function playheadLabel(comp, t) {
     return when;
 }
 
+// An error's message, for the status line
+function errText(e) {
+    var m = "";
+    try { m = String(e.message); } catch (eM) {}
+    if (m === "" || m === "undefined") { try { m = e.toString(); } catch (eS) { m = "unknown error"; } }
+    return m.replace(/^After Effects error:\s*/, "");
+}
+
 // ------------------------------------------------------------------
 // Text animators
 //
@@ -73,10 +81,16 @@ function selectorAt(layer, ai, si) {
     return animatorAt(layer, ai).property("ADBE Text Selectors").property(si);
 }
 
-// The animator's property (Opacity, Position...), adding it if needed
+// The animator's property (Opacity, Position...), shown if it isn't
+// yet. The Properties group lists every animator property whether
+// it has been added or not, so a lookup never comes back null, and a
+// hidden one refuses values (and expressions: canSetExpression is
+// the tell) until addProperty shows it. Adding one that's already
+// shown just hands it back.
 function ensureAnimProp(layer, ai, match) {
     var props = animatorAt(layer, ai).property("ADBE Text Animator Properties");
-    if (props.property(match) === null) props.addProperty(match);
+    var p = props.property(match);
+    if (p === null || !p.canSetExpression) props.addProperty(match);
     return animatorAt(layer, ai).property("ADBE Text Animator Properties").property(match);
 }
 

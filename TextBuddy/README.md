@@ -20,9 +20,10 @@ Everything keys at the **playhead**. Results show in the status line at the bott
    - **Property + amount**: what each word starts as. Options are Opacity (0%), Position Y (50 px), Scale (0%), Rotation (45°), and Blur (20 px).
    - **By**: Range Selector → Advanced → Based On. Defaults to **Words**.
    - **Smooth**: Smoothness. At **0%**, which is the default, each word pops on cleanly. Higher values cross-fade neighboring words.
-2. Click **Add Animator**. Each layer gets an animator named *TextBuddy*. Click it again to update that animator. Pick a different property and click again to stack it on the same animator, so Opacity 0% then Position Y 50 gives a fade-up. **Alt/Option-click** adds a separate animator instead.
-3. Move the playhead to where the reveal starts and click **◇ Offset 0%**. Every word is held at the amount you set.
-4. Move the playhead to where it ends and click **◇ Offset 100%**. Every word is back to normal.
+   - **Frames**: how long the reveal takes (20 by default).
+2. Put the playhead where the reveal should start and click **Animate**. Every press builds a complete, new animation on each layer: an animator named after the property (*TextBuddy Opacity*, numbered if that name is taken) with a range selector and its **Offset keyed 0% on the playhead and 100% Frames later**. The keys land selected and twirled open, so a GraphBuddy ease tile shapes them next.
+   - **Alt/Option-click** stacks instead of adding: the property goes onto the layer's newest TextBuddy animator and rides its existing Offset keys. Opacity, then Alt-click Position Y, gives a fade-up on one sweep.
+3. To re-time a reveal, move the playhead and click **◇ Offset 0%** or **◇ Offset 100%**. The selected range selectors get a key there.
 
 The Offset buttons work on any range selectors you've selected in the timeline (select an animator to key only that one). With nothing selected they key every range selector on the selected text layers, including ones made with AE's own Animate menu.
 
