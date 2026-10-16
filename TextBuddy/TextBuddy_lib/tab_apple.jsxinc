@@ -5,6 +5,8 @@
    Drop       characters fall in from above (Ramp Up position sweep,
               Ease Low 80) with a separate fade, based on characters
    Rise       words rise in from below (Ease High 60 / Low 80) + fade
+   Lift       the viral TikTok recipe: words lift in from below and
+              fade on ONE animator (Ramp Up, Ease High -50 / Low 100)
    Slide      the whole layer slides up, abrupt start, long landing
    Slide Cut  match cut: outgoing text slides away, incoming takes
               over mid-move and keeps drifting (the 3-keyframe trick)
@@ -24,6 +26,11 @@ var APPLE_STYLES = [
     { label: "Rise", kind: "rise", by: 3, dir: 1, easeHigh: 60, easeLow: 80,
       tip: "Rise \u2014 words rise into place from below and fade in (Ramp Up, Ease High 60% / " +
            "Low 80%, based on Words), swept from the playhead over Frames." },
+    { label: "Lift", kind: "lift", by: 3, dir: 1, easeHigh: -50, easeLow: 100,
+      tip: "Lift \u2014 the viral TikTok recipe: words lift into place from Dist px below and " +
+           "fade in as they go, on ONE animator. Opacity 0% and Position share a Ramp Up range " +
+           "selector based on Words with Ease High -50% / Ease Low 100%, Offset swept " +
+           "-100% \u2192 100% over Frames. The TikTok uses Dist 100." },
     { label: "Slide", kind: "slide", dir: 1,
       tip: "Slide \u2014 the whole layer slides up Dist px into place with the Apple ease: an " +
            "abrupt start and a long soft landing. Works on any layer." }
@@ -79,6 +86,25 @@ function rangeStyleOn(layer, style, dist, t0, t1) {
             selectorAt(layer, fd, fsi).property("ADBE Text Percent Offset")];
 }
 
+// Lift: the TikTok recipe. One animator carries both the fade and the
+// move on a single Ramp Up selector, so each word fades in while it
+// rises; the negative Ease High is what gives it the quick start.
+// Re-applying updates the same animator. Returns its Offset.
+function liftStyleOn(layer, style, dist, t0, t1) {
+    var ai = ensureAnimator(layer, "Apple Lift", false).index;
+    var si = ensureRangeSelector(layer, ai);
+    setNow(ensureAnimProp(layer, ai, "ADBE Text Opacity"), 0, t0);
+    var pos = ensureAnimProp(layer, ai, "ADBE Text Position 3D");
+    setNow(pos, textAmount({ axis: 1 }, pos.value, style.dir * dist), t0);
+    var s = selectorAt(layer, ai, si);
+    setAdvanced(s, "ADBE Text Range Shape", "Shape", 2, t0);
+    setAdvanced(s, "ADBE Text Range Type2", "Based On", style.by, t0);
+    setAdvanced(s, "ADBE Text Levels Max Ease", "Ease High", style.easeHigh, t0);
+    setAdvanced(s, "ADBE Text Levels Min Ease", "Ease Low", style.easeLow, t0);
+    linearSweep(s.property("ADBE Text Percent Offset"), t0, -100, t1, 100);
+    return [selectorAt(layer, ai, si).property("ADBE Text Percent Offset")];
+}
+
 function applyRangeStyle(style, frames, dist) {
     var comp = activeComp();
     if (comp === null) { setStatus("Open a composition first."); return; }
@@ -90,9 +116,10 @@ function applyRangeStyle(style, frames, dist) {
     var offs = [], n = 0, revealed = false, lastErr = null;
     app.beginUndoGroup(SCRIPT_NAME + ": " + style.label);
     try {
+        var build = (style.kind === "lift") ? liftStyleOn : rangeStyleOn;
         for (var i = 0; i < layers.length; i++) {
             try {
-                offs = offs.concat(rangeStyleOn(layers[i], style, dist, t0, t1));
+                offs = offs.concat(build(layers[i], style, dist, t0, t1));
                 n++;
             } catch (e) { lastErr = e; }
         }

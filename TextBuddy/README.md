@@ -29,18 +29,19 @@ The Offset buttons work on any range selectors you've selected in the timeline (
 
 ## Apple tab — the Apple text looks
 
-The techniques from Motion By Scott's [How To Animate Text Like Apple](https://www.youtube.com/watch?v=Z_HE-jfK02s), one tile each. **Frames** sets how long a reveal, slide, or underline takes. **Dist** sets how far text travels (70 px, as in the video; a negative value flips the direction).
+The techniques from Motion By Scott's [How To Animate Text Like Apple](https://www.youtube.com/watch?v=Z_HE-jfK02s), one tile each, plus the one-animator TikTok version as **Lift**. **Frames** sets how long a reveal, slide, or underline takes. **Dist** sets how far text travels (70 px, as in the video; a negative value flips the direction).
 
 | Tile | What it does |
 |---|---|
 | **Drop** | Characters fall into place from above and fade in, one after another. Built like the video: a Position animator on a **Ramp Up** range selector with **Ease Low 80%**, plus a separate square **Opacity** fade, both swept from the playhead. |
 | **Rise** | Words rise into place from below and fade in: Ramp Up, **Ease High 60% / Ease Low 80%**, based on **Words**. |
+| **Lift** | The viral TikTok recipe (@_jkproduction): words lift into place from **Dist** px below and fade in as they go, on **one** animator. Opacity 0% and Position share a **Ramp Up** selector based on **Words** with **Ease High -50% / Ease Low 100%**, and the Offset sweeps -100% → 100% over Frames. The TikTok uses Dist 100. |
 | **Slide** | The whole layer slides up into place with the Apple ease: an abrupt start, then a long soft landing. Works on any layer. |
 | **Slide Cut** | Match cut between two layers. See below. |
 | **Scale Cut** | Match cut through a zoom to **Zoom %** (130%, as in the video). |
 | **Underline** | A hand-drawn underline under each selected text layer, drawn on over Frames. It has a tapered stroke, round caps, a little Turbulent Displace wobble, and uses the text's color. It's parented to the text, so it follows any cut. |
 
-Drop and Rise use two animators, *Apple Move* and *Apple Fade*. Applying either one again (even the other style) updates those same two animators and re-keys them at the playhead, so they don't pile up. Their easing comes from Ease High / Low rather than the Offset keys, the way the video explains it. F9 on range-selector Offsets does nothing useful.
+Drop and Rise use two animators, *Apple Move* and *Apple Fade*. Applying either one again (even the other style) updates those same two animators and re-keys them at the playhead, so they don't pile up. Lift uses one, *Apple Lift*, and re-applying it updates that one the same way. Their easing comes from Ease High / Low rather than the Offset keys, the way the video explains it. F9 on range-selector Offsets does nothing useful.
 
 ### Match cuts
 

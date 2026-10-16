@@ -4,7 +4,7 @@
         (property, Based On, Smoothness) with its Offset keyed
         0% -> 100% over Frames, keys selected and twirled open in
         the timeline; the Offset buttons re-key it. Apple tab: the
-        "animate text like Apple" looks \u2014 Drop, Rise, Slide reveals,
+        "animate text like Apple" looks \u2014 Drop, Rise, Lift, Slide reveals,
         Slide / Scale match cuts with the 3-keyframe drift, and a
         hand-drawn Underline. (Reveal moved here from GraphBuddy.)
 

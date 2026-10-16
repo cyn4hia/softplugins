@@ -173,6 +173,14 @@ function drawStyleArt(g, kind, px, py, pw, ph) {
             var off = (1 - ps[i]) * travel * (drop ? -1 : 1);
             block(px + i * slot, rest + off, bw, ps[i]);
         }
+    } else if (kind === "lift") {
+        // four words, each one lower and fainter than the last
+        var lp = [1, 0.7, 0.4, 0.12];
+        var ls = pw / lp.length;
+        bw = ls - 3;
+        for (i = 0; i < lp.length; i++) {
+            block(px + i * ls, rest + (1 - lp[i]) * travel, bw, lp[i]);
+        }
     } else if (kind === "slide") {
         bw = pw * 0.8;
         x = px + (pw - bw) / 2;
